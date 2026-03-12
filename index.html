@@ -26,8 +26,7 @@
 
     // ── CONFIG — update SHEET_ID if it changes ──
     const SHEET_ID  = "1hGTwlIhPwi12-vjqaA92umV2oFgjU9aa-ffCoFNUQS8";
-    const SHEET_TAB = "MacroRadar";
-    const SHEET_CSV = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&sheet=${SHEET_TAB}`;
+    const SHEET_CSV = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=582118687`;
 
     const C = {
       bg: "#0d1117", surface: "#161b22", border: "#30363d",
@@ -306,7 +305,7 @@
         setScanLog([]);
         addLog(true, "SCAN", "Fetching sheet CSV...");
         try {
-          const res = await fetch(SHEET_CSV);
+          const res = await fetch(SHEET_CSV + `&cachebust=${Date.now()}`);
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           const text = await res.text();
           const parsed = parseCSV(text);
