@@ -12,7 +12,7 @@
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0d1117; color: #e6edf3; font-family: 'Inter', system-ui, sans-serif; }
-    ::-webkit-scrollbar { width: 6px; } 
+    ::-webkit-scrollbar { width: 6px; }
     ::-webkit-scrollbar-track { background: #0d1117; }
     ::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
     button { cursor: pointer; }
@@ -20,14 +20,13 @@
 </head>
 <body>
   <div id="root"></div>
- 
+
   <script type="text/babel">
     const { useState, useCallback } = React;
- 
-    // ── CONFIG — update SHEET_ID if it changes ──
+
     const SHEET_ID  = "1hGTwlIhPwi12-vjqaA92umV2oFgjU9aa-ffCoFNUQS8";
     const SHEET_CSV = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=582118687`;
- 
+
     const C = {
       bg: "#0d1117", surface: "#161b22", border: "#30363d",
       text: "#e6edf3", muted: "#8b949e", blue: "#58a6ff",
@@ -36,8 +35,7 @@
     };
     const mono = "'JetBrains Mono', monospace";
     const sans = "'Inter', system-ui, sans-serif";
- 
-    // ── CSV parser — schema: key,value,change,unit,source,updated_at ──
+
     function parseCSV(text) {
       const lines = text.trim().split("\n").slice(1);
       const out = {};
@@ -64,65 +62,60 @@
       }
       return out;
     }
- 
+
     function isStale(ts) {
       if (!ts) return true;
       try { return Date.now() - new Date(ts).getTime() > 25 * 3600 * 1000; }
       catch { return true; }
     }
- 
+
     function now() {
       return new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
     }
- 
-    // ── Signal logic per sheet key ──
+
     const SIGNAL_FN = {
-      dxy:     p => p.change < 0 ? "bull" : "bear",
-      m2:      p => p.change > 0 ? "bull" : "bear",
-      walcl:   p => p.change > 0 ? "bull" : "bear",
-      wti:     p => p.change > 0 ? "bear" : "bull",
-      natgas:  p => p.change > 0 ? "bear" : "bull",
-      ethbtc:  p => parseFloat(p.value) >= 0.040 ? "bull" : "neutral",
-      dom:     p => p.change < 0 ? "bull" : "neutral",
-      btcetf:  p => parseFloat(p.value) > 0 ? "bull" : "bear",
-      ethetf:  p => parseFloat(p.value) > 0 ? "bull" : "bear",
-      funding: p => parseFloat(p.value) > 0.1 ? "bear" : "neutral",
-      btc:     p => p.change > 0 ? "bull" : "bear",
-      eth:     p => p.change > 0 ? "bull" : "bear",
-      fg:      p => parseFloat(p.value) < 20 ? "bull" : parseFloat(p.value) > 75 ? "bear" : "neutral",
-      y10:     p => p.change > 0 ? "bear" : "bull",
-      y2:      p => p.change > 0 ? "bear" : "bull",
-      rrp:     p => p.change > 0 ? "bull" : "bear",
-      fedfunds:p => p.change > 0 ? "bear" : "bull",
-      tga:     p => p.change < 0 ? "bull" : "neutral",
-      cpi:     p => p.change < 0 ? "bull" : p.change > 0 ? "bear" : "neutral",
-      spread:  p => parseFloat(p.value) < 0 ? "bear" : "neutral",
+      dxy:      p => p.change < 0 ? "bull" : "bear",
+      m2:       p => p.change > 0 ? "bull" : "bear",
+      walcl:    p => p.change > 0 ? "bull" : "bear",
+      wti:      p => p.change > 0 ? "bear" : "bull",
+      natgas:   p => p.change > 0 ? "bear" : "bull",
+      ethbtc:   p => parseFloat(p.value) >= 0.040 ? "bull" : "neutral",
+      dom:      p => p.change < 0 ? "bull" : "neutral",
+      btcetf:   p => parseFloat(p.value) > 0 ? "bull" : "bear",
+      ethetf:   p => parseFloat(p.value) > 0 ? "bull" : "bear",
+      funding:  p => parseFloat(p.value) > 0.1 ? "bear" : "neutral",
+      btc:      p => p.change > 0 ? "bull" : "bear",
+      eth:      p => p.change > 0 ? "bull" : "bear",
+      fg:       p => parseFloat(p.value) < 20 ? "bull" : parseFloat(p.value) > 75 ? "bear" : "neutral",
+      y10:      p => p.change > 0 ? "bear" : "bull",
+      y2:       p => p.change > 0 ? "bear" : "bull",
+      rrp:      p => p.change > 0 ? "bull" : "bear",
+      fedfunds: p => p.change > 0 ? "bear" : "bull",
+      tga:      p => p.change < 0 ? "bull" : "neutral",
+      cpi:      p => p.change < 0 ? "bull" : p.change > 0 ? "bear" : "neutral",
+      spread:   p => parseFloat(p.value) < 0 ? "bear" : "neutral",
     };
- 
+
     const CATALYSTS = [
-      { date: "2026-03-19", event: "FOMC Decision",                  impact: "bull",  note: "Rate cut odds ~12% — hold expected",                                         confidence: "High"   },
-      { date: "2026-03-12", event: "CPI Print (Feb)",                impact: "watch", note: "Hotter = yields up, risk-off pressure",                                       confidence: "High"   },
-      { date: "2026-Q2",    event: "Clarity Act — Senate Markup",    impact: "bull",  note: "Stablecoin yield dispute unresolved. Passage = major bullish catalyst",        confidence: "Medium" },
-      { date: "2026-Q2",    event: "Debt Ceiling Resolution",        impact: "watch", note: "TGA drawdown = short-term liquidity injection",                               confidence: "Medium" },
-      { date: "2026-H1",    event: "Fed Balance Sheet Pivot (QT→QE)",impact: "bull",  note: "Biggest macro trigger. Watch WALCL weekly",                                   confidence: "Low"    },
-      { date: "2026-03-28", event: "PCE Inflation (Feb)",            impact: "watch", note: "Fed's preferred gauge — key for pivot timing",                               confidence: "High"   },
+      { date: "2026-03-19", event: "FOMC Decision",                   impact: "bull",  note: "Rate cut odds ~12% — hold expected",                                         confidence: "High"   },
+      { date: "2026-03-12", event: "CPI Print (Feb)",                 impact: "watch", note: "Hotter = yields up, risk-off pressure",                                       confidence: "High"   },
+      { date: "2026-Q2",    event: "Clarity Act — Senate Markup",     impact: "bull",  note: "Stablecoin yield dispute unresolved. Passage = major bullish catalyst",        confidence: "Medium" },
+      { date: "2026-Q2",    event: "Debt Ceiling Resolution",         impact: "watch", note: "TGA drawdown = short-term liquidity injection",                               confidence: "Medium" },
+      { date: "2026-H1",    event: "Fed Balance Sheet Pivot (QT→QE)", impact: "bull",  note: "Biggest macro trigger. Watch WALCL weekly",                                   confidence: "Low"    },
+      { date: "2026-03-28", event: "PCE Inflation (Feb)",             impact: "watch", note: "Fed's preferred gauge — key for pivot timing",                               confidence: "High"   },
     ];
- 
+
     const TIPS = [
-      { label: "ETH/BTC Rotation",    body: "Trigger at 0.040. Current ~0.024 — not triggered. Wait for ratio + BTC dominance falling." },
-      { label: "Fear & Greed < 20",   body: "Accumulation zone. Scale in BTC. Historical recoveries within 4–8 weeks." },
-      { label: "Fear & Greed > 75",   body: "Start trimming. Move 20–30% to stablecoins. Don't sell all — momentum can persist." },
-      { label: "4+ Macro Red",        body: "Move majority to stablecoins. Re-enter when RRP rising + DXY falling + M2 expanding." },
-      { label: "RRP Near Zero",       body: "Liquidity tank empty. Next leg up needs M2 expansion + Fed pivot. Watch WALCL weekly." },
-      { label: "Global M2 Lag",       body: "BTC historically lags global M2 expansion by 10–12 weeks. M2 is a leading indicator." },
-      { label: "TGA Drawdown",        body: "Treasury spending down TGA = liquidity flowing into banking system = mild bullish." },
-      { label: "Crude Oil Spike",     body: "Energy spikes = inflation pressure = Fed stays hawkish = risk-off. Watch if WTI >$90." },
+      { label: "ETH/BTC Rotation",  body: "Trigger at 0.040. Current ~0.024 — not triggered. Wait for ratio + BTC dominance falling." },
+      { label: "Fear & Greed < 20", body: "Accumulation zone. Scale in BTC. Historical recoveries within 4–8 weeks." },
+      { label: "Fear & Greed > 75", body: "Start trimming. Move 20–30% to stablecoins. Don't sell all — momentum can persist." },
+      { label: "4+ Macro Red",      body: "Move majority to stablecoins. Re-enter when RRP rising + DXY falling + M2 expanding." },
+      { label: "RRP Near Zero",     body: "Liquidity tank empty. Next leg up needs M2 expansion + Fed pivot. Watch WALCL weekly." },
+      { label: "Global M2 Lag",     body: "BTC historically lags global M2 expansion by 10–12 weeks. M2 is a leading indicator." },
+      { label: "TGA Drawdown",      body: "Treasury spending down TGA = liquidity flowing into banking system = mild bullish." },
+      { label: "Crude Oil Spike",   body: "Energy spikes = inflation pressure = Fed stays hawkish = risk-off. Watch if WTI >$90." },
     ];
- 
-    // ────────────────────────────────────────────
-    // Components
-    // ────────────────────────────────────────────
- 
+
     function Tag({ label }) {
       const colors = { bull: C.green, bear: C.red, watch: C.amber, neutral: C.muted };
       const col = colors[label] || C.muted;
@@ -134,13 +127,23 @@
         </span>
       );
     }
- 
-    function MetricCard({ label, value, change, unit="", source, updatedAt, stale, flash, invertSignal, subtext }) {
+
+    // ── MetricCard ────────────────────────────────────────────────────────
+    // New props:
+    //   signalColor  — overrides the change-row color entirely (for value-derived signals)
+    //   changeLabel  — replaces the auto "▲ x.xx% 24h" text with a custom string
+    function MetricCard({ label, value, change, unit="", source, updatedAt, stale,
+                          flash, invertSignal, subtext, signalColor, changeLabel }) {
       const [hov, setHov] = useState(false);
       const isPos = change > 0, isNeg = change < 0;
-      const changeColor = invertSignal
+
+      let changeColor = invertSignal
         ? (isPos ? C.red : isNeg ? C.green : C.muted)
         : (isPos ? C.green : isNeg ? C.red : C.muted);
+      if (signalColor) changeColor = signalColor;
+
+      const hasChangeRow = change != null || changeLabel != null;
+
       return (
         <div onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
           style={{ background: C.surface, border: `1px solid ${flash ? C.blue : C.border}`,
@@ -158,12 +161,16 @@
             </span>
             {unit && <span style={{ fontSize: 13, fontFamily: mono, color: C.muted }}>{unit}</span>}
           </div>
-          {change != null && (
+
+          {hasChangeRow && (
             <div style={{ fontSize: 12, fontFamily: mono, color: changeColor }}>
-              {isPos ? "▲" : isNeg ? "▼" : "—"} {Math.abs(change).toFixed(2)}%
-              <span style={{ color: C.muted, marginLeft: 6, fontSize: 10 }}>24h</span>
+              {changeLabel != null
+                ? changeLabel
+                : <>{isPos ? "▲" : isNeg ? "▼" : "—"} {Math.abs(change).toFixed(2)}%<span style={{ color: C.muted, marginLeft: 6, fontSize: 10 }}>24h</span></>
+              }
             </div>
           )}
+
           {subtext && <div style={{ fontSize: 11, fontFamily: mono, color: C.muted, marginTop: 4 }}>{subtext}</div>}
           <div style={{ marginTop: 10, fontSize: 10, fontFamily: mono, display: "flex", justifyContent: "space-between" }}>
             <span style={{ color: C.muted + "99" }}>{source || "—"}</span>
@@ -172,7 +179,26 @@
         </div>
       );
     }
- 
+
+    // ── Signal color helpers ──────────────────────────────────────────────
+    // Yield Curve: red = inverted, amber = flat (<0.5), chartBlue = normal/steepening
+    function spreadSignalColor(value) {
+      if (!value) return C.muted;
+      const v = parseFloat(value);
+      if (isNaN(v))  return C.muted;
+      if (v < 0)     return C.red;
+      if (v < 0.5)   return C.amber;
+      return C.chartBlue;
+    }
+
+    // Fed Funds: red = hike, green = cut, chartBlue = unchanged
+    function fedfundsSignalColor(change) {
+      if (change == null) return C.muted;
+      if (change > 0)     return C.red;
+      if (change < 0)     return C.green;
+      return C.chartBlue;
+    }
+
     function SectionLabel({ children }) {
       return (
         <div style={{ fontSize: 11, fontFamily: mono, color: C.muted, textTransform: "uppercase",
@@ -181,7 +207,7 @@
         </div>
       );
     }
- 
+
     function SignalBar({ signals }) {
       const vals = Object.values(signals).filter(Boolean);
       const bulls = vals.filter(v => v === "bull").length;
@@ -213,7 +239,7 @@
         </div>
       );
     }
- 
+
     function ScanLog({ log }) {
       if (!log.length) return null;
       return (
@@ -230,7 +256,7 @@
         </div>
       );
     }
- 
+
     function FearGauge({ value }) {
       if (value == null) return <div style={{ color: C.muted, fontFamily: mono }}>— run scan</div>;
       const v = Math.max(0, Math.min(100, value));
@@ -259,7 +285,7 @@
         </div>
       );
     }
- 
+
     function ETHBTCBar({ ratio }) {
       const target = 0.040;
       const pct = Math.min(100, ((ratio || 0) / target) * 100);
@@ -279,29 +305,26 @@
         </div>
       );
     }
- 
-    // ────────────────────────────────────────────
-    // Main App
-    // ────────────────────────────────────────────
+
     function App() {
-      const [tab, setTab]         = useState("macro");
+      const [tab, setTab]           = useState("macro");
       const [scanning, setScanning] = useState(false);
-      const [scanLog, setScanLog] = useState([]);
+      const [scanLog, setScanLog]   = useState([]);
       const [lastScan, setLastScan] = useState(null);
-      const [flash, setFlash]     = useState({});
-      const [data, setData]       = useState({});
- 
+      const [flash, setFlash]       = useState({});
+      const [data, setData]         = useState({});
+
       const addLog = useCallback((ok, source, note) => {
         setScanLog(prev => [{ ok, source, note, time: now() }, ...prev].slice(0, 50));
       }, []);
- 
+
       const flashCards = useCallback((keys) => {
         const obj = {};
         keys.forEach(k => obj[k] = true);
         setFlash(obj);
         setTimeout(() => setFlash({}), 2000);
       }, []);
- 
+
       const runScan = useCallback(async () => {
         if (scanning) return;
         setScanning(true);
@@ -312,8 +335,7 @@
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           const text = await res.text();
           const parsed = parseCSV(text);
-          const updates = {};
-          const keys = [];
+          const updates = {}, keys = [];
           for (const [k, sigFn] of Object.entries(SIGNAL_FN)) {
             if (parsed[k]) {
               updates[k] = { ...parsed[k], signal: sigFn(parsed[k]) };
@@ -332,14 +354,28 @@
         }
         setScanning(false);
       }, [scanning, addLog, flashCards]);
- 
+
       const d = data;
-      const signals = Object.fromEntries(
-        Object.entries(d).map(([k, v]) => [k, v?.signal])
-      );
- 
+      const signals = Object.fromEntries(Object.entries(d).map(([k, v]) => [k, v?.signal]));
       const grid = { display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(190px,1fr))", gap: 12 };
- 
+
+      // ── Yield Curve signal ────────────────────────────────────────────
+      const spreadNum   = parseFloat(d.spread?.value);
+      const spreadColor = spreadSignalColor(d.spread?.value);
+      const spreadLabel = !d.spread?.value ? null
+        : isNaN(spreadNum) ? null
+        : spreadNum < 0   ? `▼ ${spreadNum.toFixed(2)}% — Inverted`
+        : spreadNum < 0.5 ? `► ${spreadNum.toFixed(2)}% — Flat`
+        :                   `▲ ${spreadNum.toFixed(2)}% — Normal`;
+
+      // ── Fed Funds signal ──────────────────────────────────────────────
+      const ffChange = d.fedfunds?.change;
+      const ffColor  = fedfundsSignalColor(ffChange);
+      const ffLabel  = ffChange == null ? null
+        : ffChange > 0 ? `▲ +${ffChange.toFixed(2)}% — Hike (bear)`
+        : ffChange < 0 ? `▼ ${ffChange.toFixed(2)}% — Cut (bull)`
+        :                `► Unchanged`;
+
       return (
         <div style={{ background: C.bg, minHeight: "100vh", paddingBottom: 40 }}>
           {/* Header */}
@@ -350,7 +386,7 @@
               <div style={{ width: 8, height: 8, borderRadius: "50%", background: C.accent, boxShadow: `0 0 8px ${C.accent}` }} />
               <span style={{ fontFamily: sans, fontWeight: 700, fontSize: 17, letterSpacing: "-0.3px" }}>MACRO RADAR</span>
               <span style={{ fontFamily: mono, fontSize: 10, color: C.muted,
-                background: C.bg, border: `1px solid ${C.border}`, borderRadius: 4, padding: "2px 8px" }}>v2.1</span>
+                background: C.bg, border: `1px solid ${C.border}`, borderRadius: 4, padding: "2px 8px" }}>v2.3</span>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
               {lastScan && <span style={{ fontFamily: mono, fontSize: 11, color: C.muted }}>Last scan: {lastScan}</span>}
@@ -363,11 +399,11 @@
               </button>
             </div>
           </div>
- 
+
           <div style={{ padding: "16px 24px", maxWidth: 1200, margin: "0 auto" }}>
             <div style={{ marginBottom: 12 }}><SignalBar signals={signals} /></div>
             {scanLog.length > 0 && <div style={{ marginBottom: 16 }}><ScanLog log={scanLog} /></div>}
- 
+
             {/* Tabs */}
             <div style={{ display: "flex", gap: 2, marginBottom: 20, borderBottom: `1px solid ${C.border}` }}>
               {["macro","crypto","catalysts","tips"].map(t => (
@@ -380,53 +416,128 @@
                     transition: "all 0.15s" }}>{t}</button>
               ))}
             </div>
- 
+
             {/* MACRO */}
             {tab === "macro" && (
               <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
                 <div>
                   <SectionLabel>Rates & Yields</SectionLabel>
                   <div style={grid}>
-                    <MetricCard label="DXY"              value={d.dxy?.value}      change={d.dxy?.change}      source={d.dxy?.source}      updatedAt={d.dxy?.updatedAt}      stale={!d.dxy}      flash={flash.dxy}      invertSignal subtext="↓ Falling = risk-on" />
-                    <MetricCard label="10Y Yield"        value={d.y10?.value}      change={d.y10?.change}      source={d.y10?.source}      updatedAt={d.y10?.updatedAt}      stale={!d.y10}      flash={flash.y10}      invertSignal unit={d.y10?.unit} />
-                    <MetricCard label="2Y Yield"         value={d.y2?.value}       change={d.y2?.change}       source={d.y2?.source}       updatedAt={d.y2?.updatedAt}       stale={!d.y2}       flash={flash.y2}       invertSignal unit={d.y2?.unit} />
-                    <MetricCard label="Yield Curve"      value={d.spread?.value}                               source={d.spread?.source}   updatedAt={d.spread?.updatedAt}   stale={!d.spread}   flash={flash.spread}   subtext={d.spread?.subtext || "Run scan"} unit={d.spread?.unit} />
-                    <MetricCard label="Fed Funds Rate"   value={d.fedfunds?.value} change={d.fedfunds?.change} source={d.fedfunds?.source} updatedAt={d.fedfunds?.updatedAt} stale={!d.fedfunds} flash={flash.fedfunds} invertSignal unit={d.fedfunds?.unit} />
+                    <MetricCard label="DXY"
+                      value={d.dxy?.value}        change={d.dxy?.change}
+                      source={d.dxy?.source}      updatedAt={d.dxy?.updatedAt}
+                      stale={!d.dxy}              flash={flash.dxy}
+                      invertSignal                subtext="↓ Falling = risk-on" />
+
+                    <MetricCard label="10Y Yield"
+                      value={d.y10?.value}        change={d.y10?.change}
+                      source={d.y10?.source}      updatedAt={d.y10?.updatedAt}
+                      stale={!d.y10}              flash={flash.y10}
+                      invertSignal                unit={d.y10?.unit} />
+
+                    <MetricCard label="2Y Yield"
+                      value={d.y2?.value}         change={d.y2?.change}
+                      source={d.y2?.source}       updatedAt={d.y2?.updatedAt}
+                      stale={!d.y2}              flash={flash.y2}
+                      invertSignal                unit={d.y2?.unit} />
+
+                    {/* Yield Curve — color from spread value, label describes shape */}
+                    <MetricCard label="Yield Curve"
+                      value={d.spread?.value}
+                      source={d.spread?.source}   updatedAt={d.spread?.updatedAt}
+                      stale={!d.spread}           flash={flash.spread}
+                      unit={d.spread?.unit}
+                      signalColor={spreadColor}
+                      changeLabel={spreadLabel}
+                      subtext="10Y−2Y · red = inverted" />
+
+                    {/* Fed Funds — color from hike/cut/hold */}
+                    <MetricCard label="Fed Funds Rate"
+                      value={d.fedfunds?.value}   change={d.fedfunds?.change}
+                      source={d.fedfunds?.source} updatedAt={d.fedfunds?.updatedAt}
+                      stale={!d.fedfunds}         flash={flash.fedfunds}
+                      unit={d.fedfunds?.unit}
+                      signalColor={ffColor}
+                      changeLabel={ffLabel}
+                      subtext="↑ Hike = bear · ↓ Cut = bull" />
                   </div>
                 </div>
                 <div>
                   <SectionLabel>Liquidity Flows</SectionLabel>
                   <div style={grid}>
-                    <MetricCard label="RRP"              value={d.rrp?.value}    change={d.rrp?.change}   source={d.rrp?.source}   updatedAt={d.rrp?.updatedAt}   stale={!d.rrp}   flash={flash.rrp}   unit={d.rrp?.unit}  subtext="Near zero = tank empty" />
-                    <MetricCard label="TGA Balance"      value={d.tga?.value}    change={d.tga?.change}   source={d.tga?.source}   updatedAt={d.tga?.updatedAt}   stale={!d.tga}   flash={flash.tga}   subtext={d.tga?.subtext || "↓ Drawdown = bullish"} />
-                    <MetricCard label="Fed Balance Sheet" value={d.walcl?.value} change={d.walcl?.change} source={d.walcl?.source} updatedAt={d.walcl?.updatedAt} stale={!d.walcl} flash={flash.walcl} unit={d.walcl?.unit} subtext="↑ Expanding = QE signal" />
-                    <MetricCard label="M2 Money Supply"  value={d.m2?.value}     change={d.m2?.change}    source={d.m2?.source}    updatedAt={d.m2?.updatedAt}    stale={!d.m2}    flash={flash.m2}    unit={d.m2?.unit}   subtext="BTC lags M2 ~10–12w" />
+                    <MetricCard label="RRP"
+                      value={d.rrp?.value}        change={d.rrp?.change}
+                      source={d.rrp?.source}      updatedAt={d.rrp?.updatedAt}
+                      stale={!d.rrp}              flash={flash.rrp}
+                      unit={d.rrp?.unit}          subtext="Near zero = tank empty" />
+                    <MetricCard label="TGA Balance"
+                      value={d.tga?.value}        change={d.tga?.change}
+                      source={d.tga?.source}      updatedAt={d.tga?.updatedAt}
+                      stale={!d.tga}              flash={flash.tga}
+                      subtext="↓ Drawdown = bullish" />
+                    <MetricCard label="Fed Balance Sheet"
+                      value={d.walcl?.value}      change={d.walcl?.change}
+                      source={d.walcl?.source}    updatedAt={d.walcl?.updatedAt}
+                      stale={!d.walcl}            flash={flash.walcl}
+                      unit={d.walcl?.unit}        subtext="↑ Expanding = QE signal" />
+                    <MetricCard label="M2 Money Supply"
+                      value={d.m2?.value}         change={d.m2?.change}
+                      source={d.m2?.source}       updatedAt={d.m2?.updatedAt}
+                      stale={!d.m2}              flash={flash.m2}
+                      unit={d.m2?.unit}           subtext="BTC lags M2 ~10–12w" />
                   </div>
                 </div>
                 <div>
                   <SectionLabel>Energy & Inflation</SectionLabel>
                   <div style={grid}>
-                    <MetricCard label="WTI Crude Oil" value={d.wti?.value}    change={d.wti?.change}    source={d.wti?.source}    updatedAt={d.wti?.updatedAt}    stale={!d.wti}    flash={flash.wti}    invertSignal subtext=">$90 = risk-off watch" />
-                    <MetricCard label="Natural Gas"   value={d.natgas?.value} change={d.natgas?.change} source={d.natgas?.source} updatedAt={d.natgas?.updatedAt} stale={!d.natgas} flash={flash.natgas} invertSignal />
-                    <MetricCard label="CPI"           value={d.cpi?.value}    change={d.cpi?.change}    source={d.cpi?.source}    updatedAt={d.cpi?.updatedAt}    stale={!d.cpi}    flash={flash.cpi}    invertSignal unit={d.cpi?.unit} subtext="YoY — lower = risk-on" />
+                    <MetricCard label="WTI Crude Oil"
+                      value={d.wti?.value}        change={d.wti?.change}
+                      source={d.wti?.source}      updatedAt={d.wti?.updatedAt}
+                      stale={!d.wti}              flash={flash.wti}
+                      invertSignal                subtext=">$90 = risk-off watch" />
+                    <MetricCard label="Natural Gas"
+                      value={d.natgas?.value}     change={d.natgas?.change}
+                      source={d.natgas?.source}   updatedAt={d.natgas?.updatedAt}
+                      stale={!d.natgas}           flash={flash.natgas}
+                      invertSignal />
+                    <MetricCard label="CPI"
+                      value={d.cpi?.value}        change={d.cpi?.change}
+                      source={d.cpi?.source}      updatedAt={d.cpi?.updatedAt}
+                      stale={!d.cpi}              flash={flash.cpi}
+                      invertSignal                unit={d.cpi?.unit}
+                      subtext="YoY — lower = risk-on" />
                   </div>
                 </div>
               </div>
             )}
- 
+
             {/* CRYPTO */}
             {tab === "crypto" && (
               <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
                 <div>
                   <SectionLabel>Prices</SectionLabel>
                   <div style={grid}>
-                    <MetricCard label="BTC / USD"      value={d.btc?.value}     change={d.btc?.change}     source={d.btc?.source}     updatedAt={d.btc?.updatedAt}     stale={!d.btc}     flash={flash.btc} />
-                    <MetricCard label="ETH / USD"      value={d.eth?.value}     change={d.eth?.change}     source={d.eth?.source}     updatedAt={d.eth?.updatedAt}     stale={!d.eth}     flash={flash.eth} />
-                    <MetricCard label="BTC Dominance"  value={d.dom?.value}     change={d.dom?.change}     source={d.dom?.source}     updatedAt={d.dom?.updatedAt}     stale={!d.dom}     flash={flash.dom}  unit="%" subtext="↓ Falling = alt season" />
-                    <MetricCard label="Funding Rate"   value={d.funding?.value}                            source={d.funding?.source} updatedAt={d.funding?.updatedAt} stale={!d.funding} flash={flash.funding} unit="%" subtext=">0.1% = overheated longs" />
+                    <MetricCard label="BTC / USD"
+                      value={d.btc?.value}        change={d.btc?.change}
+                      source={d.btc?.source}      updatedAt={d.btc?.updatedAt}
+                      stale={!d.btc}              flash={flash.btc} />
+                    <MetricCard label="ETH / USD"
+                      value={d.eth?.value}        change={d.eth?.change}
+                      source={d.eth?.source}      updatedAt={d.eth?.updatedAt}
+                      stale={!d.eth}              flash={flash.eth} />
+                    <MetricCard label="BTC Dominance"
+                      value={d.dom?.value}        change={d.dom?.change}
+                      source={d.dom?.source}      updatedAt={d.dom?.updatedAt}
+                      stale={!d.dom}              flash={flash.dom}
+                      unit="%"                    subtext="↓ Falling = alt season" />
+                    <MetricCard label="Funding Rate"
+                      value={d.funding?.value}
+                      source={d.funding?.source}  updatedAt={d.funding?.updatedAt}
+                      stale={!d.funding}          flash={flash.funding}
+                      unit="%"                    subtext=">0.1% = overheated longs" />
                   </div>
                 </div>
- 
+
                 {/* ETH/BTC */}
                 <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: "16px 20px" }}>
                   <SectionLabel>ETH / BTC Rotation Tracker</SectionLabel>
@@ -457,7 +568,7 @@
                     </div>
                   </div>
                 </div>
- 
+
                 {/* Fear & Greed */}
                 <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: "16px 20px" }}>
                   <SectionLabel>Sentiment</SectionLabel>
@@ -497,18 +608,24 @@
                     </div>
                   </div>
                 </div>
- 
+
                 {/* ETF Flows */}
                 <div>
                   <SectionLabel>ETF Flows (Daily)</SectionLabel>
                   <div style={grid}>
-                    <MetricCard label="BTC ETF Net Flow" value={d.btcetf?.value} source={d.btcetf?.source} updatedAt={d.btcetf?.updatedAt} stale={!d.btcetf} flash={flash.btcetf} subtext="Positive = institutional buy" />
-                    <MetricCard label="ETH ETF Net Flow" value={d.ethetf?.value} source={d.ethetf?.source} updatedAt={d.ethetf?.updatedAt} stale={!d.ethetf} flash={flash.ethetf} subtext="Positive = institutional buy" />
+                    <MetricCard label="BTC ETF Net Flow"
+                      value={d.btcetf?.value}     source={d.btcetf?.source}
+                      updatedAt={d.btcetf?.updatedAt} stale={!d.btcetf}
+                      flash={flash.btcetf}        subtext="Positive = institutional buy" />
+                    <MetricCard label="ETH ETF Net Flow"
+                      value={d.ethetf?.value}     source={d.ethetf?.source}
+                      updatedAt={d.ethetf?.updatedAt} stale={!d.ethetf}
+                      flash={flash.ethetf}        subtext="Positive = institutional buy" />
                   </div>
                 </div>
               </div>
             )}
- 
+
             {/* CATALYSTS */}
             {tab === "catalysts" && (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -533,7 +650,7 @@
                 ))}
               </div>
             )}
- 
+
             {/* TIPS */}
             {tab === "tips" && (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -558,11 +675,8 @@
         </div>
       );
     }
- 
+
     ReactDOM.createRoot(document.getElementById("root")).render(<App />);
   </script>
 </body>
 </html>
-
-
-
