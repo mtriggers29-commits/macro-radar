@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
@@ -32,6 +32,7 @@
       text: "#e6edf3", muted: "#8b949e", blue: "#58a6ff",
       red: "#f85149", green: "#3fb950", amber: "#f0b453",
       chartBlue: "#79c6ff", accent: "#00d4ff", hover: "#1f2937",
+      purple: "#bc8cff",
     };
     const mono = "'JetBrains Mono', monospace";
     const sans = "'Inter', system-ui, sans-serif";
@@ -116,6 +117,22 @@
       { label: "Crude Oil Spike",   body: "Energy spikes = inflation pressure = Fed stays hawkish = risk-off. Watch if WTI >$90." },
     ];
 
+    // ── BTC Dominance zone logic ──────────────────────────────────────────
+    // >60%      : BTC accumulation phase — alts underperform
+    // 55%–60%   : Rotation starting — capital beginning to leave BTC
+    // 50%–55%   : Altcoin season approaching
+    // 40%–50%   : Confirmed altseason — optimal alt performance zone
+    // <40%      : Euphoria / warning — market top risk
+    function domZone(value) {
+      const v = parseFloat(value);
+      if (isNaN(v)) return { color: C.muted, label: "—", subtext: "↓ Falling = alt season" };
+      if (v >= 60)  return { color: C.blue,     label: `► ${v.toFixed(2)}% — BTC Phase`,         subtext: "BTC dominant — hold BTC, avoid alts" };
+      if (v >= 55)  return { color: C.amber,    label: `▼ ${v.toFixed(2)}% — Rotation Starting`, subtext: "Capital rotating → ETH/SOL/SUI" };
+      if (v >= 50)  return { color: C.chartBlue,label: `▼ ${v.toFixed(2)}% — Alt Season Near`,   subtext: "Approaching confirmed altseason" };
+      if (v >= 40)  return { color: C.green,    label: `▼ ${v.toFixed(2)}% — Alt Season ✓`,      subtext: "Optimal zone — broad alt rally" };
+      return              { color: C.red,       label: `▼ ${v.toFixed(2)}% — Euphoria Zone`,      subtext: "⚠ Below 40% — market top risk" };
+    }
+
     function Tag({ label }) {
       const colors = { bull: C.green, bear: C.red, watch: C.amber, neutral: C.muted };
       const col = colors[label] || C.muted;
@@ -128,10 +145,8 @@
       );
     }
 
-    // ── MetricCard ────────────────────────────────────────────────────────
-    // New props:
-    //   signalColor  — overrides the change-row color entirely (for value-derived signals)
-    //   changeLabel  — replaces the auto "▲ x.xx% 24h" text with a custom string
+    // signalColor  — overrides change-row color (for value-derived signals)
+    // changeLabel  — replaces the auto "▲ x.xx% 24h" text with a custom string
     function MetricCard({ label, value, change, unit="", source, updatedAt, stale,
                           flash, invertSignal, subtext, signalColor, changeLabel }) {
       const [hov, setHov] = useState(false);
@@ -180,18 +195,17 @@
       );
     }
 
-    // ── Signal color helpers ──────────────────────────────────────────────
-    // Yield Curve: red = inverted, amber = flat (<0.5), chartBlue = normal/steepening
+    // ── Yield Curve signal color ──────────────────────────────────────────
     function spreadSignalColor(value) {
       if (!value) return C.muted;
       const v = parseFloat(value);
-      if (isNaN(v))  return C.muted;
-      if (v < 0)     return C.red;
-      if (v < 0.5)   return C.amber;
+      if (isNaN(v)) return C.muted;
+      if (v < 0)    return C.red;
+      if (v < 0.5)  return C.amber;
       return C.chartBlue;
     }
 
-    // Fed Funds: red = hike, green = cut, chartBlue = unchanged
+    // ── Fed Funds signal color ────────────────────────────────────────────
     function fedfundsSignalColor(change) {
       if (change == null) return C.muted;
       if (change > 0)     return C.red;
@@ -286,6 +300,58 @@
       );
     }
 
+    // ── BTC Dominance Zone Bar ────────────────────────────────────────────
+    function DomZoneBar({ value }) {
+      const v = parseFloat(value);
+      if (isNaN(v)) return null;
+      const zones = [
+        { label: ">60%",     min: 60, max: 80,  color: C.blue,      desc: "BTC Phase"  },
+        { label: "55–60%",   min: 55, max: 60,  color: C.amber,     desc: "Rotation"   },
+        { label: "50–55%",   min: 50, max: 55,  color: C.chartBlue, desc: "Alt Near"   },
+        { label: "40–50%",   min: 40, max: 50,  color: C.green,     desc: "Altseason"  },
+        { label: "<40%",     min: 0,  max: 40,  color: C.red,       desc: "Euphoria"   },
+      ];
+      // Map value to position on a 0–80% scale bar
+      const pct = Math.min(100, Math.max(0, (v / 80) * 100));
+      return (
+        <div style={{ marginTop: 10 }}>
+          {/* Zone legend pills */}
+          <div style={{ display: "flex", gap: 4, marginBottom: 6, flexWrap: "wrap" }}>
+            {zones.map(z => {
+              const active = v >= z.min && v < z.max;
+              return (
+                <span key={z.label} style={{
+                  fontFamily: mono, fontSize: 9, padding: "1px 6px", borderRadius: 3,
+                  color: z.color,
+                  background: active ? z.color + "33" : z.color + "11",
+                  border: `1px solid ${active ? z.color + "88" : z.color + "22"}`,
+                  fontWeight: active ? 700 : 400,
+                }}>{z.label}</span>
+              );
+            })}
+          </div>
+          {/* Gradient bar with needle */}
+          <div style={{ position: "relative", height: 6, borderRadius: 4,
+            background: `linear-gradient(to left, ${C.blue}, ${C.amber}, ${C.chartBlue}, ${C.green}, ${C.red})` }}>
+            <div style={{
+              position: "absolute", top: -4, left: `${pct}%`,
+              transform: "translateX(-50%)",
+              width: 3, height: 14, borderRadius: 2,
+              background: C.text, boxShadow: `0 0 4px #000`,
+            }} />
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between",
+            fontFamily: mono, fontSize: 9, color: C.muted, marginTop: 3 }}>
+            <span style={{ color: C.red }}>40%</span>
+            <span style={{ color: C.green }}>50%</span>
+            <span style={{ color: C.chartBlue }}>55%</span>
+            <span style={{ color: C.amber }}>60%</span>
+            <span style={{ color: C.blue }}>80%+</span>
+          </div>
+        </div>
+      );
+    }
+
     function ETHBTCBar({ ratio }) {
       const target = 0.040;
       const pct = Math.min(100, ((ratio || 0) / target) * 100);
@@ -359,7 +425,7 @@
       const signals = Object.fromEntries(Object.entries(d).map(([k, v]) => [k, v?.signal]));
       const grid = { display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(190px,1fr))", gap: 12 };
 
-      // ── Yield Curve signal ────────────────────────────────────────────
+      // ── Yield Curve derived signal ────────────────────────────────────
       const spreadNum   = parseFloat(d.spread?.value);
       const spreadColor = spreadSignalColor(d.spread?.value);
       const spreadLabel = !d.spread?.value ? null
@@ -368,13 +434,16 @@
         : spreadNum < 0.5 ? `► ${spreadNum.toFixed(2)}% — Flat`
         :                   `▲ ${spreadNum.toFixed(2)}% — Normal`;
 
-      // ── Fed Funds signal ──────────────────────────────────────────────
+      // ── Fed Funds derived signal ──────────────────────────────────────
       const ffChange = d.fedfunds?.change;
       const ffColor  = fedfundsSignalColor(ffChange);
       const ffLabel  = ffChange == null ? null
         : ffChange > 0 ? `▲ +${ffChange.toFixed(2)}% — Hike (bear)`
         : ffChange < 0 ? `▼ ${ffChange.toFixed(2)}% — Cut (bull)`
         :                `► Unchanged`;
+
+      // ── BTC Dominance derived signal ──────────────────────────────────
+      const domZoneData = domZone(d.dom?.value);
 
       return (
         <div style={{ background: C.bg, minHeight: "100vh", paddingBottom: 40 }}>
@@ -386,7 +455,7 @@
               <div style={{ width: 8, height: 8, borderRadius: "50%", background: C.accent, boxShadow: `0 0 8px ${C.accent}` }} />
               <span style={{ fontFamily: sans, fontWeight: 700, fontSize: 17, letterSpacing: "-0.3px" }}>MACRO RADAR</span>
               <span style={{ fontFamily: mono, fontSize: 10, color: C.muted,
-                background: C.bg, border: `1px solid ${C.border}`, borderRadius: 4, padding: "2px 8px" }}>v2.3</span>
+                background: C.bg, border: `1px solid ${C.border}`, borderRadius: 4, padding: "2px 8px" }}>v2.4</span>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
               {lastScan && <span style={{ fontFamily: mono, fontSize: 11, color: C.muted }}>Last scan: {lastScan}</span>}
@@ -428,20 +497,16 @@
                       source={d.dxy?.source}      updatedAt={d.dxy?.updatedAt}
                       stale={!d.dxy}              flash={flash.dxy}
                       invertSignal                subtext="↓ Falling = risk-on" />
-
                     <MetricCard label="10Y Yield"
                       value={d.y10?.value}        change={d.y10?.change}
                       source={d.y10?.source}      updatedAt={d.y10?.updatedAt}
                       stale={!d.y10}              flash={flash.y10}
                       invertSignal                unit={d.y10?.unit} />
-
                     <MetricCard label="2Y Yield"
                       value={d.y2?.value}         change={d.y2?.change}
                       source={d.y2?.source}       updatedAt={d.y2?.updatedAt}
                       stale={!d.y2}              flash={flash.y2}
                       invertSignal                unit={d.y2?.unit} />
-
-                    {/* Yield Curve — color from spread value, label describes shape */}
                     <MetricCard label="Yield Curve"
                       value={d.spread?.value}
                       source={d.spread?.source}   updatedAt={d.spread?.updatedAt}
@@ -450,8 +515,6 @@
                       signalColor={spreadColor}
                       changeLabel={spreadLabel}
                       subtext="10Y−2Y · red = inverted" />
-
-                    {/* Fed Funds — color from hike/cut/hold */}
                     <MetricCard label="Fed Funds Rate"
                       value={d.fedfunds?.value}   change={d.fedfunds?.change}
                       source={d.fedfunds?.source} updatedAt={d.fedfunds?.updatedAt}
@@ -525,16 +588,60 @@
                       value={d.eth?.value}        change={d.eth?.change}
                       source={d.eth?.source}      updatedAt={d.eth?.updatedAt}
                       stale={!d.eth}              flash={flash.eth} />
-                    <MetricCard label="BTC Dominance"
-                      value={d.dom?.value}        change={d.dom?.change}
-                      source={d.dom?.source}      updatedAt={d.dom?.updatedAt}
-                      stale={!d.dom}              flash={flash.dom}
-                      unit="%"                    subtext="↓ Falling = alt season" />
                     <MetricCard label="Funding Rate"
                       value={d.funding?.value}
                       source={d.funding?.source}  updatedAt={d.funding?.updatedAt}
                       stale={!d.funding}          flash={flash.funding}
                       unit="%"                    subtext=">0.1% = overheated longs" />
+                  </div>
+                </div>
+
+                {/* ── BTC Dominance — expanded card with zone bar ── */}
+                <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: "16px 20px" }}>
+                  <SectionLabel>BTC Dominance</SectionLabel>
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: 24, flexWrap: "wrap" }}>
+                    <div>
+                      <div style={{ fontFamily: mono, fontSize: 11, color: C.muted, marginBottom: 4 }}>Current</div>
+                      <div style={{ fontFamily: sans, fontSize: 36, fontWeight: 700, color: domZoneData.color }}>
+                        {d.dom?.value ? parseFloat(d.dom.value).toFixed(2) : "—"}
+                        <span style={{ fontSize: 18, marginLeft: 4 }}>%</span>
+                      </div>
+                      <div style={{ fontFamily: mono, fontSize: 12, color: domZoneData.color, marginTop: 4 }}>
+                        {domZoneData.label}
+                      </div>
+                      <div style={{ fontFamily: mono, fontSize: 10, color: C.muted, marginTop: 2 }}>
+                        {d.dom?.source || "—"} · {d.dom?.updatedAt || "not fetched"}
+                      </div>
+                    </div>
+                    <div style={{ flex: 1, minWidth: 220, paddingTop: 4 }}>
+                      <DomZoneBar value={d.dom?.value} />
+                      <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 5 }}>
+                        {[
+                          { range: ">60%",   color: C.blue,      desc: "BTC Phase — hold BTC, avoid alts" },
+                          { range: "55–60%", color: C.amber,     desc: "Rotation starting → ETH/SOL/SUI" },
+                          { range: "50–55%", color: C.chartBlue, desc: "Altseason approaching" },
+                          { range: "40–50%", color: C.green,     desc: "Confirmed altseason — optimal zone" },
+                          { range: "<40%",   color: C.red,       desc: "⚠ Euphoria — market top risk" },
+                        ].map(z => {
+                          const v = parseFloat(d.dom?.value);
+                          const active = !isNaN(v) && (
+                            (z.range === ">60%"   && v >= 60) ||
+                            (z.range === "55–60%" && v >= 55 && v < 60) ||
+                            (z.range === "50–55%" && v >= 50 && v < 55) ||
+                            (z.range === "40–50%" && v >= 40 && v < 50) ||
+                            (z.range === "<40%"   && v < 40)
+                          );
+                          return (
+                            <div key={z.range} style={{ display: "flex", gap: 10, alignItems: "center",
+                              background: active ? z.color + "18" : "transparent",
+                              borderRadius: 4, padding: "3px 8px" }}>
+                              <span style={{ fontFamily: mono, fontSize: 10, color: z.color, minWidth: 46, fontWeight: active ? 700 : 400 }}>{z.range}</span>
+                              <span style={{ fontFamily: mono, fontSize: 10, color: active ? C.text : C.muted }}>{z.desc}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
                   </div>
                 </div>
 
