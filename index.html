@@ -82,6 +82,7 @@
       walcl:   p => p.change > 0 ? "bull" : "bear",
       wti:     p => p.change > 0 ? "bear" : "bull",
       natgas:  p => p.change > 0 ? "bear" : "bull",
+      ethbtc:  p => parseFloat(p.value) >= 0.040 ? "bull" : "neutral",
       dom:     p => p.change < 0 ? "bull" : "neutral",
       btcetf:  p => parseFloat(p.value) > 0 ? "bull" : "bear",
       ethetf:  p => parseFloat(p.value) > 0 ? "bull" : "bear",
