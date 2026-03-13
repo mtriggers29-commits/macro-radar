@@ -20,14 +20,14 @@
 </head>
 <body>
   <div id="root"></div>
-
+ 
   <script type="text/babel">
     const { useState, useCallback } = React;
-
+ 
     // ── CONFIG — update SHEET_ID if it changes ──
     const SHEET_ID  = "1hGTwlIhPwi12-vjqaA92umV2oFgjU9aa-ffCoFNUQS8";
     const SHEET_CSV = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=582118687`;
-
+ 
     const C = {
       bg: "#0d1117", surface: "#161b22", border: "#30363d",
       text: "#e6edf3", muted: "#8b949e", blue: "#58a6ff",
@@ -36,7 +36,7 @@
     };
     const mono = "'JetBrains Mono', monospace";
     const sans = "'Inter', system-ui, sans-serif";
-
+ 
     // ── CSV parser — schema: key,value,change,unit,source,updated_at ──
     function parseCSV(text) {
       const lines = text.trim().split("\n").slice(1);
@@ -64,17 +64,17 @@
       }
       return out;
     }
-
+ 
     function isStale(ts) {
       if (!ts) return true;
       try { return Date.now() - new Date(ts).getTime() > 25 * 3600 * 1000; }
       catch { return true; }
     }
-
+ 
     function now() {
       return new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
     }
-
+ 
     // ── Signal logic per sheet key ──
     const SIGNAL_FN = {
       dxy:     p => p.change < 0 ? "bull" : "bear",
@@ -95,8 +95,10 @@
       rrp:     p => p.change > 0 ? "bull" : "bear",
       fedfunds:p => p.change > 0 ? "bear" : "bull",
       tga:     p => p.change < 0 ? "bull" : "neutral",
+      cpi:     p => p.change < 0 ? "bull" : p.change > 0 ? "bear" : "neutral",
+      spread:  p => parseFloat(p.value) < 0 ? "bear" : "neutral",
     };
-
+ 
     const CATALYSTS = [
       { date: "2026-03-19", event: "FOMC Decision",                  impact: "bull",  note: "Rate cut odds ~12% — hold expected",                                         confidence: "High"   },
       { date: "2026-03-12", event: "CPI Print (Feb)",                impact: "watch", note: "Hotter = yields up, risk-off pressure",                                       confidence: "High"   },
@@ -105,7 +107,7 @@
       { date: "2026-H1",    event: "Fed Balance Sheet Pivot (QT→QE)",impact: "bull",  note: "Biggest macro trigger. Watch WALCL weekly",                                   confidence: "Low"    },
       { date: "2026-03-28", event: "PCE Inflation (Feb)",            impact: "watch", note: "Fed's preferred gauge — key for pivot timing",                               confidence: "High"   },
     ];
-
+ 
     const TIPS = [
       { label: "ETH/BTC Rotation",    body: "Trigger at 0.040. Current ~0.024 — not triggered. Wait for ratio + BTC dominance falling." },
       { label: "Fear & Greed < 20",   body: "Accumulation zone. Scale in BTC. Historical recoveries within 4–8 weeks." },
@@ -116,11 +118,11 @@
       { label: "TGA Drawdown",        body: "Treasury spending down TGA = liquidity flowing into banking system = mild bullish." },
       { label: "Crude Oil Spike",     body: "Energy spikes = inflation pressure = Fed stays hawkish = risk-off. Watch if WTI >$90." },
     ];
-
+ 
     // ────────────────────────────────────────────
     // Components
     // ────────────────────────────────────────────
-
+ 
     function Tag({ label }) {
       const colors = { bull: C.green, bear: C.red, watch: C.amber, neutral: C.muted };
       const col = colors[label] || C.muted;
@@ -132,7 +134,7 @@
         </span>
       );
     }
-
+ 
     function MetricCard({ label, value, change, unit="", source, updatedAt, stale, flash, invertSignal, subtext }) {
       const [hov, setHov] = useState(false);
       const isPos = change > 0, isNeg = change < 0;
@@ -170,7 +172,7 @@
         </div>
       );
     }
-
+ 
     function SectionLabel({ children }) {
       return (
         <div style={{ fontSize: 11, fontFamily: mono, color: C.muted, textTransform: "uppercase",
@@ -179,7 +181,7 @@
         </div>
       );
     }
-
+ 
     function SignalBar({ signals }) {
       const vals = Object.values(signals).filter(Boolean);
       const bulls = vals.filter(v => v === "bull").length;
@@ -211,7 +213,7 @@
         </div>
       );
     }
-
+ 
     function ScanLog({ log }) {
       if (!log.length) return null;
       return (
@@ -228,7 +230,7 @@
         </div>
       );
     }
-
+ 
     function FearGauge({ value }) {
       if (value == null) return <div style={{ color: C.muted, fontFamily: mono }}>— run scan</div>;
       const v = Math.max(0, Math.min(100, value));
@@ -257,7 +259,7 @@
         </div>
       );
     }
-
+ 
     function ETHBTCBar({ ratio }) {
       const target = 0.040;
       const pct = Math.min(100, ((ratio || 0) / target) * 100);
@@ -277,7 +279,7 @@
         </div>
       );
     }
-
+ 
     // ────────────────────────────────────────────
     // Main App
     // ────────────────────────────────────────────
@@ -288,18 +290,18 @@
       const [lastScan, setLastScan] = useState(null);
       const [flash, setFlash]     = useState({});
       const [data, setData]       = useState({});
-
+ 
       const addLog = useCallback((ok, source, note) => {
         setScanLog(prev => [{ ok, source, note, time: now() }, ...prev].slice(0, 50));
       }, []);
-
+ 
       const flashCards = useCallback((keys) => {
         const obj = {};
         keys.forEach(k => obj[k] = true);
         setFlash(obj);
         setTimeout(() => setFlash({}), 2000);
       }, []);
-
+ 
       const runScan = useCallback(async () => {
         if (scanning) return;
         setScanning(true);
@@ -330,14 +332,14 @@
         }
         setScanning(false);
       }, [scanning, addLog, flashCards]);
-
+ 
       const d = data;
       const signals = Object.fromEntries(
         Object.entries(d).map(([k, v]) => [k, v?.signal])
       );
-
+ 
       const grid = { display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(190px,1fr))", gap: 12 };
-
+ 
       return (
         <div style={{ background: C.bg, minHeight: "100vh", paddingBottom: 40 }}>
           {/* Header */}
@@ -361,11 +363,11 @@
               </button>
             </div>
           </div>
-
+ 
           <div style={{ padding: "16px 24px", maxWidth: 1200, margin: "0 auto" }}>
             <div style={{ marginBottom: 12 }}><SignalBar signals={signals} /></div>
             {scanLog.length > 0 && <div style={{ marginBottom: 16 }}><ScanLog log={scanLog} /></div>}
-
+ 
             {/* Tabs */}
             <div style={{ display: "flex", gap: 2, marginBottom: 20, borderBottom: `1px solid ${C.border}` }}>
               {["macro","crypto","catalysts","tips"].map(t => (
@@ -378,7 +380,7 @@
                     transition: "all 0.15s" }}>{t}</button>
               ))}
             </div>
-
+ 
             {/* MACRO */}
             {tab === "macro" && (
               <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
@@ -411,7 +413,7 @@
                 </div>
               </div>
             )}
-
+ 
             {/* CRYPTO */}
             {tab === "crypto" && (
               <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
@@ -424,7 +426,7 @@
                     <MetricCard label="Funding Rate"   value={d.funding?.value}                            source={d.funding?.source} updatedAt={d.funding?.updatedAt} stale={!d.funding} flash={flash.funding} unit="%" subtext=">0.1% = overheated longs" />
                   </div>
                 </div>
-
+ 
                 {/* ETH/BTC */}
                 <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: "16px 20px" }}>
                   <SectionLabel>ETH / BTC Rotation Tracker</SectionLabel>
@@ -455,7 +457,7 @@
                     </div>
                   </div>
                 </div>
-
+ 
                 {/* Fear & Greed */}
                 <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: "16px 20px" }}>
                   <SectionLabel>Sentiment</SectionLabel>
@@ -495,7 +497,7 @@
                     </div>
                   </div>
                 </div>
-
+ 
                 {/* ETF Flows */}
                 <div>
                   <SectionLabel>ETF Flows (Daily)</SectionLabel>
@@ -506,7 +508,7 @@
                 </div>
               </div>
             )}
-
+ 
             {/* CATALYSTS */}
             {tab === "catalysts" && (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -531,7 +533,7 @@
                 ))}
               </div>
             )}
-
+ 
             {/* TIPS */}
             {tab === "tips" && (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -556,9 +558,11 @@
         </div>
       );
     }
-
+ 
     ReactDOM.createRoot(document.getElementById("root")).render(<App />);
   </script>
 </body>
 </html>
+
+
 
