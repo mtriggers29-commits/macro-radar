@@ -293,6 +293,8 @@
       if (chg > -5)  return { color: C.chartBlue, label: `► ${chg.toFixed(1)}% — Normal`,          subtext: "Routine activity · no strong signal"             };
       return              { color: C.red,        label: `▼ ${chg.toFixed(1)}% — Declining`,      subtext: "Low participation · complacency or fully deployed" };
     }
+
+    function SectionLabel({ children }) {
       return (
         <div style={{ fontSize: 11, fontFamily: mono, color: C.muted, textTransform: "uppercase",
           letterSpacing: "0.1em", marginBottom: 10, paddingBottom: 6, borderBottom: `1px solid ${C.border}` }}>
