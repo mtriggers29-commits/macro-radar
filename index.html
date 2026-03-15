@@ -1,4 +1,4 @@
-<<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
@@ -95,6 +95,9 @@
       tga:      p => p.change < 0 ? "bull" : "neutral",
       cpi:      p => p.change < 0 ? "bull" : p.change > 0 ? "bear" : "neutral",
       spread:   p => parseFloat(p.value) < 0 ? "bear" : "neutral",
+      oi:       p => p.change > 2 ? "bear" : p.change < -2 ? "bull" : "neutral",
+      stabvol:  p => p.change > 20 ? "bull" : p.change < -20 ? "bear" : "neutral",
+      soletf:   p => parseFloat(p.value) > 0 ? "bull" : "bear",
     };
 
     const CATALYSTS = [
@@ -455,7 +458,7 @@
               <div style={{ width: 8, height: 8, borderRadius: "50%", background: C.accent, boxShadow: `0 0 8px ${C.accent}` }} />
               <span style={{ fontFamily: sans, fontWeight: 700, fontSize: 17, letterSpacing: "-0.3px" }}>MACRO RADAR</span>
               <span style={{ fontFamily: mono, fontSize: 10, color: C.muted,
-                background: C.bg, border: `1px solid ${C.border}`, borderRadius: 4, padding: "2px 8px" }}>v2.4</span>
+                background: C.bg, border: `1px solid ${C.border}`, borderRadius: 4, padding: "2px 8px" }}>v2.5</span>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
               {lastScan && <span style={{ fontFamily: mono, fontSize: 11, color: C.muted }}>Last scan: {lastScan}</span>}
@@ -593,6 +596,18 @@
                       source={d.funding?.source}  updatedAt={d.funding?.updatedAt}
                       stale={!d.funding}          flash={flash.funding}
                       unit="%"                    subtext=">0.1% = overheated longs" />
+                    <MetricCard label="Open Interest"
+                      value={d.oi?.value}
+                      source={d.oi?.source}       updatedAt={d.oi?.updatedAt}
+                      stale={!d.oi}               flash={flash.oi}
+                      change={d.oi?.change}
+                      subtext="↑ Rising OI = leveraged market" />
+                    <MetricCard label="Stablecoin Volume"
+                      value={d.stabvol?.value}
+                      source={d.stabvol?.source}  updatedAt={d.stabvol?.updatedAt}
+                      stale={!d.stabvol}          flash={flash.stabvol}
+                      change={d.stabvol?.change}
+                      subtext="↑ Spike = capital rotating in" />
                   </div>
                 </div>
 
@@ -728,6 +743,11 @@
                       value={d.ethetf?.value}     source={d.ethetf?.source}
                       updatedAt={d.ethetf?.updatedAt} stale={!d.ethetf}
                       flash={flash.ethetf}        subtext="Positive = institutional buy" />
+                    <MetricCard label="SOL ETF Net Flow"
+                      value={d.soletf?.value}     source={d.soletf?.source}
+                      updatedAt={d.soletf?.updatedAt} stale={!d.soletf}
+                      flash={flash.soletf}        change={d.soletf?.change}
+                      subtext="SOLZ/GSOL proxy · positive = inflow" />
                   </div>
                 </div>
               </div>
@@ -787,3 +807,6 @@
   </script>
 </body>
 </html>
+
+
+  
