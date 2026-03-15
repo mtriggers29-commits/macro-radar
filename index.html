@@ -84,7 +84,15 @@
       dom:      p => p.change < 0 ? "bull" : "neutral",
       btcetf:   p => parseFloat(p.value) > 0 ? "bull" : "bear",
       ethetf:   p => parseFloat(p.value) > 0 ? "bull" : "bear",
-      funding:  p => parseFloat(p.value) > 0.1 ? "bear" : "neutral",
+      funding:  p => {
+        const v = parseFloat(p.value);
+        if (isNaN(v))    return "neutral";
+        if (v > 0.05)    return "bear";    // overheated longs — correction risk
+        if (v > 0.01)    return "bull";    // healthy longs — bullish
+        if (v > -0.01)   return "neutral"; // balanced
+        if (v > -0.05)   return "bear";    // shorts dominant — bearish
+        return "bull";                     // overheated shorts — short squeeze potential
+      },
       btc:      p => p.change > 0 ? "bull" : "bear",
       eth:      p => p.change > 0 ? "bull" : "bear",
       fg:       p => parseFloat(p.value) < 20 ? "bull" : parseFloat(p.value) > 75 ? "bear" : "neutral",
@@ -95,8 +103,23 @@
       tga:      p => p.change < 0 ? "bull" : "neutral",
       cpi:      p => p.change < 0 ? "bull" : p.change > 0 ? "bear" : "neutral",
       spread:   p => parseFloat(p.value) < 0 ? "bear" : "neutral",
-      oi:       p => p.change > 2 ? "bear" : p.change < -2 ? "bull" : "neutral",
-      stabvol:  p => p.change > 20 ? "bull" : p.change < -20 ? "bear" : "neutral",
+      oi:       p => {
+        const chg = p.change;
+        if (chg == null || isNaN(chg)) return "neutral";
+        if (chg > 5)    return "bull";    // strong new capital inflow
+        if (chg > 1)    return "bull";    // healthy participation building
+        if (chg > -1)   return "neutral"; // flat — no strong signal
+        if (chg > -5)   return "bear";    // deleveraging — trend weakening
+        return "bear";                    // sharp unwind — potential reversal
+      },
+      stabvol:  p => {
+        const chg = p.change;
+        if (chg == null || isNaN(chg)) return "neutral";
+        if (chg > 20)  return "neutral"; // extreme spike — ambiguous, use amber via zone
+        if (chg > 5)   return "bull";    // active participation, dry powder building
+        if (chg > -5)  return "neutral"; // routine variance
+        return "bear";                   // declining activity, low participation
+      },
       soletf:   p => parseFloat(p.value) > 0 ? "bull" : "bear",
     };
 
@@ -216,7 +239,60 @@
       return C.chartBlue;
     }
 
-    function SectionLabel({ children }) {
+    // ── Funding Rate 5-zone signal ────────────────────────────────────────
+    // Zones (% per 8h):
+    //  > +0.05%  Overheated Bull  — red    (crowded longs, long squeeze risk)
+    //  +0.01 to +0.05  Bullish    — green  (healthy long bias)
+    //  -0.01 to +0.01  Neutral    — blue   (balanced, low immediate risk)
+    //  -0.05 to -0.01  Bearish    — red    (short bias dominant)
+    //  < -0.05%  Overheated Bear  — amber  (extreme shorts, short squeeze potential)
+    function fundingZone(value) {
+      const v = parseFloat(value);
+      if (isNaN(v) || value == null) return { color: C.muted, label: null, subtext: "Funding rate signal" };
+      if (v > 0.05)  return { color: C.red,       label: `▲ ${v.toFixed(4)}% — Overheated Longs`,  subtext: "⚠ Long squeeze risk — crowded trade"       };
+      if (v > 0.01)  return { color: C.green,      label: `▲ ${v.toFixed(4)}% — Bullish`,           subtext: "Longs paying · healthy long bias"           };
+      if (v > -0.01) return { color: C.chartBlue,  label: `► ${v.toFixed(4)}% — Neutral`,           subtext: "Balanced market · low squeeze risk"         };
+      if (v > -0.05) return { color: C.red,        label: `▼ ${v.toFixed(4)}% — Bearish`,           subtext: "Shorts dominant · bearish sentiment"        };
+      return              { color: C.amber,       label: `▼ ${v.toFixed(4)}% — Overheated Shorts`, subtext: "⚠ Short squeeze potential — extreme fear"   };
+    }
+
+    // ── Open Interest 5-zone signal ───────────────────────────────────────
+    // Signal is driven by the % change in OI (new capital in vs positions closing).
+    // Rising OI = new contracts created = trend strengthening.
+    // Falling OI = contracts closed = trend weakening / deleveraging.
+    //
+    //  > +5%    Strong inflow    — green  (significant new capital entering)
+    //  +1 to +5% Building        — chartBlue (participation growing, healthy)
+    //  -1 to +1% Flat            — chartBlue neutral (balanced, no signal)
+    //  -5 to -1% Deleveraging    — amber  (positions closing, trend softening)
+    //  < -5%    Sharp unwind     — red    (mass closing, potential reversal/flush)
+    function oiZone(value, change) {
+      if (change == null || isNaN(change) || !value) return { color: C.muted, label: null, subtext: "OI change = new capital in/out" };
+      const chg = parseFloat(change);
+      if (chg > 5)   return { color: C.green,     label: `▲ +${chg.toFixed(1)}% — Strong Inflow`,    subtext: "New capital entering · trend strengthening"   };
+      if (chg > 1)   return { color: C.chartBlue,  label: `▲ +${chg.toFixed(1)}% — Building`,         subtext: "Participation growing · healthy momentum"     };
+      if (chg > -1)  return { color: C.chartBlue,  label: `► ${chg.toFixed(1)}% — Flat`,              subtext: "Balanced positions · no strong signal"        };
+      if (chg > -5)  return { color: C.amber,      label: `▼ ${chg.toFixed(1)}% — Deleveraging`,      subtext: "Positions closing · trend may be weakening"   };
+      return              { color: C.red,         label: `▼ ${chg.toFixed(1)}% — Sharp Unwind`,     subtext: "⚠ Mass position closing · watch for reversal" };
+    }
+
+    // ── Stablecoin Volume 4-zone signal ───────────────────────────────────
+    // Volume is a participation/activity signal, not purely directional.
+    // A spike means capital is in motion but context determines if it's
+    // risk-on accumulation or risk-off rotation — treat extreme spikes as caution.
+    //
+    //  > +20%   Extreme spike  — amber  (major capital in motion, ambiguous — check other signals)
+    //  +5 to +20% Active       — green  (healthy participation, dry powder building)
+    //  -5 to +5%  Normal       — blue   (routine variance, no signal)
+    //  < -5%    Declining      — red    (low activity, complacency or capital already deployed)
+    function stabvolZone(value, change) {
+      if (change == null || isNaN(change) || !value) return { color: C.muted, label: null, subtext: "24h USDT volume · activity signal" };
+      const chg = parseFloat(change);
+      if (chg > 20)  return { color: C.amber,     label: `▲ +${chg.toFixed(1)}% — Extreme Spike`,  subtext: "⚠ Major capital in motion · check other signals" };
+      if (chg > 5)   return { color: C.green,     label: `▲ +${chg.toFixed(1)}% — Active`,         subtext: "Participation rising · dry powder building"      };
+      if (chg > -5)  return { color: C.chartBlue, label: `► ${chg.toFixed(1)}% — Normal`,          subtext: "Routine activity · no strong signal"             };
+      return              { color: C.red,        label: `▼ ${chg.toFixed(1)}% — Declining`,      subtext: "Low participation · complacency or fully deployed" };
+    }
       return (
         <div style={{ fontSize: 11, fontFamily: mono, color: C.muted, textTransform: "uppercase",
           letterSpacing: "0.1em", marginBottom: 10, paddingBottom: 6, borderBottom: `1px solid ${C.border}` }}>
@@ -448,6 +524,15 @@
       // ── BTC Dominance derived signal ──────────────────────────────────
       const domZoneData = domZone(d.dom?.value);
 
+      // ── Funding Rate derived signal ───────────────────────────────────
+      const fundingZoneData = fundingZone(d.funding?.value);
+
+      // ── Open Interest derived signal ──────────────────────────────────
+      const oiZoneData = oiZone(d.oi?.value, d.oi?.change);
+
+      // ── Stablecoin Volume derived signal ──────────────────────────────
+      const stabvolZoneData = stabvolZone(d.stabvol?.value, d.stabvol?.change);
+
       return (
         <div style={{ background: C.bg, minHeight: "100vh", paddingBottom: 40 }}>
           {/* Header */}
@@ -595,19 +680,24 @@
                       value={d.funding?.value}
                       source={d.funding?.source}  updatedAt={d.funding?.updatedAt}
                       stale={!d.funding}          flash={flash.funding}
-                      unit="%"                    subtext=">0.1% = overheated longs" />
+                      unit="%"
+                      signalColor={fundingZoneData.color}
+                      changeLabel={d.funding?.value != null ? fundingZoneData.label : null}
+                      subtext={fundingZoneData.subtext} />
                     <MetricCard label="Open Interest"
                       value={d.oi?.value}
                       source={d.oi?.source}       updatedAt={d.oi?.updatedAt}
                       stale={!d.oi}               flash={flash.oi}
-                      change={d.oi?.change}
-                      subtext="↑ Rising OI = leveraged market" />
+                      signalColor={oiZoneData.color}
+                      changeLabel={d.oi?.value != null ? oiZoneData.label : null}
+                      subtext={oiZoneData.subtext} />
                     <MetricCard label="Stablecoin Volume"
                       value={d.stabvol?.value}
                       source={d.stabvol?.source}  updatedAt={d.stabvol?.updatedAt}
                       stale={!d.stabvol}          flash={flash.stabvol}
-                      change={d.stabvol?.change}
-                      subtext="↑ Spike = capital rotating in" />
+                      signalColor={stabvolZoneData.color}
+                      changeLabel={d.stabvol?.value != null ? stabvolZoneData.label : null}
+                      subtext={stabvolZoneData.subtext} />
                   </div>
                 </div>
 
@@ -807,6 +897,3 @@
   </script>
 </body>
 </html>
-
-
-  
