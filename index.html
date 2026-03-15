@@ -1079,18 +1079,54 @@
                     </div>
                   </div>
 
-                  {/* Liquidation note */}
-                  <div style={{ background: C.surface, border: `1px solid ${C.amber}22`, borderRadius: 8, padding: "14px 18px",
-                    display: "flex", gap: 12, alignItems: "flex-start" }}>
-                    <span style={{ color: C.amber, fontSize: 16, marginTop: 1 }}>⚠</span>
-                    <div>
-                      <div style={{ fontFamily: sans, fontWeight: 600, fontSize: 13, color: C.amber, marginBottom: 4 }}>Liquidation Heatmap — Coinglass Pro Required</div>
-                      <div style={{ fontFamily: mono, fontSize: 11, color: C.muted, lineHeight: 1.8 }}>
-                        Full liquidation level data is proprietary to Coinglass and requires a paid API key (~$99+/mo).
-                        As a proxy: watch <span style={{ color: C.text }}>OI spikes</span> (leverage building) combined with
-                        <span style={{ color: C.text }}> funding rate extremes</span> — these identify when a squeeze is likely
-                        without needing exact liq prices. If you get a Coinglass API key, drop it in and this tab can be extended.
+                  {/* Liquidation Heatmap — CoinGlass embed */}
+                  <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, overflow: "hidden" }}>
+                    <div style={{ padding: "12px 16px", borderBottom: `1px solid ${C.border}`,
+                      display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <span style={{ fontFamily: mono, fontSize: 11, color: C.muted, textTransform: "uppercase", letterSpacing: "0.07em" }}>Liquidation Heatmap</span>
+                        <span style={{ fontFamily: mono, fontSize: 9, color: C.green, background: C.green+"18", border:`1px solid ${C.green}44`, borderRadius: 3, padding: "1px 6px" }}>FREE · LIVE</span>
                       </div>
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <a href="https://www.coinglass.com/LiquidationData/SUI" target="_blank"
+                          style={{ fontFamily: mono, fontSize: 10, color: C.blue, textDecoration: "none",
+                            background: C.blue+"18", border:`1px solid ${C.blue}44`, borderRadius: 4, padding: "3px 10px" }}>
+                          Open CoinGlass ↗
+                        </a>
+                        <a href="https://www.tradingdifferent.com" target="_blank"
+                          style={{ fontFamily: mono, fontSize: 10, color: C.muted, textDecoration: "none",
+                            background: C.border, border:`1px solid ${C.border}`, borderRadius: 4, padding: "3px 10px" }}>
+                          TradingDifferent ↗
+                        </a>
+                      </div>
+                    </div>
+                    {/* CoinGlass SUI liquidation heatmap embed */}
+                    <div style={{ position: "relative", width: "100%", paddingBottom: 0 }}>
+                      <iframe
+                        src="https://www.coinglass.com/pro/futures/LiquidationHeatMap?symbol=SUI&interval=12"
+                        style={{ width: "100%", height: 480, border: "none", display: "block",
+                          background: C.bg, borderRadius: "0 0 8px 8px" }}
+                        title="SUI Liquidation Heatmap — CoinGlass"
+                        loading="lazy"
+                      />
+                    </div>
+                    <div style={{ padding: "8px 16px", borderTop: `1px solid ${C.border}` }}>
+                      <span style={{ fontFamily: mono, fontSize: 10, color: C.muted }}>
+                        Source: CoinGlass (free) · Bright clusters = high leverage concentration · white = likely liquidation zone
+                        · if iframe blocked by browser, use the Open CoinGlass link above
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* OI + Funding as liq proxy reminder */}
+                  <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: "12px 16px",
+                    display: "flex", gap: 10, alignItems: "flex-start" }}>
+                    <span style={{ color: C.chartBlue, fontSize: 13, marginTop: 1 }}>💡</span>
+                    <div style={{ fontFamily: mono, fontSize: 11, color: C.muted, lineHeight: 1.8 }}>
+                      <span style={{ color: C.text }}>Reading the heatmap:</span> bright yellow/white clusters are dense liquidation zones.
+                      Price tends to gravitate toward them as market makers hunt liquidity.
+                      Combine with <span style={{ color: C.text }}>funding rate</span> direction and
+                      <span style={{ color: C.text }}> OI trend</span> above to judge whether a run to those levels is likely.
                     </div>
                   </div>
 
