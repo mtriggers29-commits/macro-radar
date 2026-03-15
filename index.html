@@ -104,13 +104,11 @@
       cpi:      p => p.change < 0 ? "bull" : p.change > 0 ? "bear" : "neutral",
       spread:   p => parseFloat(p.value) < 0 ? "bear" : "neutral",
       oi:       p => {
+        // Signal resolved in oiZone() using price context — use change as proxy here
         const chg = p.change;
         if (chg == null || isNaN(chg)) return "neutral";
-        if (chg > 5)    return "bull";    // strong new capital inflow
-        if (chg > 1)    return "bull";    // healthy participation building
-        if (chg > -1)   return "neutral"; // flat — no strong signal
-        if (chg > -5)   return "bear";    // deleveraging — trend weakening
-        return "bear";                    // sharp unwind — potential reversal
+        if (chg > 0)  return "bull";
+        return "bear";
       },
       stabvol:  p => {
         const chg = p.change;
@@ -283,14 +281,55 @@
     //  -1 to +1% Flat            — chartBlue neutral (balanced, no signal)
     //  -5 to -1% Deleveraging    — amber  (positions closing, trend softening)
     //  < -5%    Sharp unwind     — red    (mass closing, potential reversal/flush)
-    function oiZone(value, change) {
-      if (change == null || isNaN(change) || !value) return { color: C.muted, label: null, subtext: "OI change = new capital in/out" };
-      const chg = parseFloat(change);
-      if (chg > 5)   return { color: C.green,     label: `▲ +${chg.toFixed(1)}% — Strong Inflow`,    subtext: "New capital entering · trend strengthening"   };
-      if (chg > 1)   return { color: C.chartBlue,  label: `▲ +${chg.toFixed(1)}% — Building`,         subtext: "Participation growing · healthy momentum"     };
-      if (chg > -1)  return { color: C.chartBlue,  label: `► ${chg.toFixed(1)}% — Flat`,              subtext: "Balanced positions · no strong signal"        };
-      if (chg > -5)  return { color: C.amber,      label: `▼ ${chg.toFixed(1)}% — Deleveraging`,      subtext: "Positions closing · trend may be weakening"   };
-      return              { color: C.red,         label: `▼ ${chg.toFixed(1)}% — Sharp Unwind`,     subtext: "⚠ Mass position closing · watch for reversal" };
+    // ── Open Interest — Price × OI matrix ────────────────────────────────
+    // OI change alone is ambiguous. The signal requires combining with price direction:
+    //
+    //  Price ↑ + OI ↑ → BULL   New money entering to buy. Trend strengthening.
+    //  Price ↓ + OI ↑ → BEAR   New money entering to short. Downtrend strengthening.
+    //  Price ↑ + OI ↓ → WARN   Shorts covering OR longs profit-taking. Trend weakening.
+    //  Price ↓ + OI ↓ → BULL   Panic sellers / short covering. Potential bottom / reversal.
+    //
+    // priceChg = BTC 24h % change, oiChg = OI 24h % change
+    function oiZone(oiValue, oiChg, priceChg) {
+      const noData = oiChg == null || isNaN(parseFloat(oiChg)) || !oiValue;
+      const noPrice = priceChg == null || isNaN(parseFloat(priceChg));
+      if (noData) return { color: C.muted, label: null, subtext: "Price × OI = combined signal" };
+
+      const oi  = parseFloat(oiChg);
+      const oiUp   = oi  >= 0;
+      const oiDown = oi  <  0;
+
+      if (noPrice) {
+        // No price data — fall back to OI direction only
+        return oiUp
+          ? { color: C.chartBlue, label: `▲ OI +${oi.toFixed(1)}% — Building`,    subtext: "OI rising · await price direction" }
+          : { color: C.amber,     label: `▼ OI ${oi.toFixed(1)}% — Declining`,    subtext: "OI falling · positions closing"    };
+      }
+
+      const pr   = parseFloat(priceChg);
+      const prUp = pr >= 0;
+
+      if (prUp && oiUp)   return {
+        color: C.green,
+        label: `▲ Price +${pr.toFixed(1)}% · OI +${oi.toFixed(1)}% — BULLISH`,
+        subtext: "New longs entering · uptrend strengthening"
+      };
+      if (!prUp && oiUp)  return {
+        color: C.red,
+        label: `▼ Price ${pr.toFixed(1)}% · OI +${oi.toFixed(1)}% — BEARISH`,
+        subtext: "New shorts entering · downtrend strengthening"
+      };
+      if (prUp && oiDown) return {
+        color: C.amber,
+        label: `▲ Price +${pr.toFixed(1)}% · OI ${oi.toFixed(1)}% — WEAKENING`,
+        subtext: "Shorts covering / profit-taking · trend losing conviction"
+      };
+      // prDown && oiDown
+      return {
+        color: C.chartBlue,
+        label: `▼ Price ${pr.toFixed(1)}% · OI ${oi.toFixed(1)}% — BOTTOMING?`,
+        subtext: "Panic selling or shorts covering · watch for reversal"
+      };
     }
 
     // ── Stablecoin Volume 4-zone signal ───────────────────────────────────
@@ -553,8 +592,8 @@
       // ── Funding Rate derived signal ───────────────────────────────────
       const fundingZoneData = fundingZone(d.funding?.value);
 
-      // ── Open Interest derived signal ──────────────────────────────────
-      const oiZoneData = oiZone(d.oi?.value, d.oi?.change);
+      // ── Open Interest derived signal (Price × OI matrix) ─────────────
+      const oiZoneData = oiZone(d.oi?.value, d.oi?.change, d.btc?.change);
 
       // ── Stablecoin Volume derived signal ──────────────────────────────
       const stabvolZoneData = stabvolZone(d.stabvol?.value, d.stabvol?.change);
@@ -909,16 +948,10 @@
                 return              { color: C.amber,     label: `▼ ${v.toFixed(4)}% — Overheated Shorts`, subtext: "⚠ Short squeeze potential"         };
               })();
 
-              // OI zone
+              // OI zone — use price×OI matrix with SUI price change
               const suiOIchg = suiOI?.change;
-              const suiOIZone = (() => {
-                const chg = parseFloat(suiOIchg);
-                if (isNaN(chg)) return { color: C.muted, label: null, subtext: "OI change = leverage building" };
-                if (chg > 5)  return { color: C.green,    label: `▲ +${chg.toFixed(1)}% — Building`,    subtext: "New capital entering"        };
-                if (chg > -1) return { color: C.chartBlue,label: `► ${chg.toFixed(1)}% — Flat`,         subtext: "Stable positions"            };
-                if (chg > -5) return { color: C.amber,    label: `▼ ${chg.toFixed(1)}% — Deleveraging`, subtext: "Positions closing"           };
-                return             { color: C.red,       label: `▼ ${chg.toFixed(1)}% — Unwind`,       subtext: "⚠ Watch for reversal"        };
-              })();
+              const suiPriceChg = sui?.change;
+              const suiOIZone = oiZone(suiOI?.value, suiOIchg, suiPriceChg);
 
               // Price vs PP zone label
               const priceZone = (!isNaN(price) && !isNaN(pp))
