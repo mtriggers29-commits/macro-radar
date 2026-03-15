@@ -121,6 +121,23 @@
         return "bear";                   // declining activity, low participation
       },
       soletf:   p => parseFloat(p.value) > 0 ? "bull" : "bear",
+      sui:      p => p.change > 0 ? "bull" : "bear",
+      sui_funding: p => {
+        const v = parseFloat(p.value);
+        if (isNaN(v))    return "neutral";
+        if (v > 0.05)    return "bear";
+        if (v > 0.01)    return "bull";
+        if (v > -0.01)   return "neutral";
+        if (v > -0.05)   return "bear";
+        return "bull";
+      },
+      sui_oi: p => {
+        const chg = p.change;
+        if (chg == null || isNaN(chg)) return "neutral";
+        if (chg > 5)  return "bull";
+        if (chg > -1) return "neutral";
+        return "bear";
+      },
     };
 
     const CATALYSTS = [
@@ -572,7 +589,7 @@
 
             {/* Tabs */}
             <div style={{ display: "flex", gap: 2, marginBottom: 20, borderBottom: `1px solid ${C.border}` }}>
-              {["macro","crypto","catalysts","tips"].map(t => (
+              {["macro","crypto","trading","catalysts","tips"].map(t => (
                 <button key={t} onClick={() => setTab(t)}
                   style={{ fontFamily: mono, fontSize: 12, textTransform: "uppercase", letterSpacing: "0.08em",
                     padding: "10px 20px", border: "none", borderRadius: "6px 6px 0 0",
@@ -851,6 +868,235 @@
                 </div>
               </div>
             )}
+
+            {/* TRADING */}
+            {tab === "trading" && (() => {
+              const sui      = d.sui;
+              const suiF     = d.sui_funding;
+              const suiOI    = d.sui_oi;
+              const price    = parseFloat(sui?.value);
+              const pp       = parseFloat(d.sui_pp?.value);
+              const r1       = parseFloat(d.sui_r1?.value);
+              const r2       = parseFloat(d.sui_r2?.value);
+              const s1       = parseFloat(d.sui_s1?.value);
+              const s2       = parseFloat(d.sui_s2?.value);
+              const wh       = parseFloat(d.sui_wh?.value);
+              const wl       = parseFloat(d.sui_wl?.value);
+              const mh       = parseFloat(d.sui_mh?.value);
+              const ml       = parseFloat(d.sui_ml?.value);
+
+              // Price position on range bar
+              const rangeMin = isNaN(ml) ? 0 : ml;
+              const rangeMax = isNaN(mh) ? 0 : mh;
+              const rangePct = (rangeMax > rangeMin && !isNaN(price))
+                ? Math.min(100, Math.max(0, ((price - rangeMin) / (rangeMax - rangeMin)) * 100))
+                : null;
+
+              // Level position helper
+              const lvlPct = v => (!isNaN(v) && rangeMax > rangeMin)
+                ? Math.min(100, Math.max(0, ((v - rangeMin) / (rangeMax - rangeMin)) * 100))
+                : null;
+
+              // SUI funding zone (reuse same logic as BTC)
+              const suiFundVal = parseFloat(suiF?.value);
+              const suiFundZone = (() => {
+                const v = suiFundVal;
+                if (isNaN(v)) return { color: C.muted, label: null, subtext: "Funding signal" };
+                if (v > 0.05)  return { color: C.red,      label: `▲ ${v.toFixed(4)}% — Overheated Longs`,  subtext: "⚠ Long squeeze risk"              };
+                if (v > 0.01)  return { color: C.green,    label: `▲ ${v.toFixed(4)}% — Bullish`,           subtext: "Healthy long bias"                 };
+                if (v > -0.01) return { color: C.chartBlue,label: `► ${v.toFixed(4)}% — Neutral`,           subtext: "Balanced · low squeeze risk"       };
+                if (v > -0.05) return { color: C.red,      label: `▼ ${v.toFixed(4)}% — Bearish`,           subtext: "Shorts dominant"                   };
+                return              { color: C.amber,     label: `▼ ${v.toFixed(4)}% — Overheated Shorts`, subtext: "⚠ Short squeeze potential"         };
+              })();
+
+              // OI zone
+              const suiOIchg = suiOI?.change;
+              const suiOIZone = (() => {
+                const chg = parseFloat(suiOIchg);
+                if (isNaN(chg)) return { color: C.muted, label: null, subtext: "OI change = leverage building" };
+                if (chg > 5)  return { color: C.green,    label: `▲ +${chg.toFixed(1)}% — Building`,    subtext: "New capital entering"        };
+                if (chg > -1) return { color: C.chartBlue,label: `► ${chg.toFixed(1)}% — Flat`,         subtext: "Stable positions"            };
+                if (chg > -5) return { color: C.amber,    label: `▼ ${chg.toFixed(1)}% — Deleveraging`, subtext: "Positions closing"           };
+                return             { color: C.red,       label: `▼ ${chg.toFixed(1)}% — Unwind`,       subtext: "⚠ Watch for reversal"        };
+              })();
+
+              // Price vs PP zone label
+              const priceZone = (!isNaN(price) && !isNaN(pp))
+                ? price > r1 ? { label: "Above R1 — Bullish breakout", color: C.green }
+                : price > pp ? { label: "Above PP — Bullish bias",     color: C.chartBlue }
+                : price > s1 ? { label: "Below PP — Bearish bias",     color: C.amber }
+                : price > s2 ? { label: "Below S1 — Weak",             color: C.red }
+                : { label: "Below S2 — Deeply oversold",               color: C.red }
+                : null;
+
+              const levelRow = (label, val, col, note) => {
+                if (isNaN(val)) return null;
+                const isPrice = label === "PRICE";
+                return (
+                  <div key={label} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <span style={{ fontFamily: mono, fontSize: 10, color: col, minWidth: 52, fontWeight: isPrice ? 700 : 400 }}>{label}</span>
+                    <span style={{ fontFamily: mono, fontSize: isPrice ? 14 : 12, color: isPrice ? C.text : col, fontWeight: isPrice ? 700 : 400 }}>${val.toFixed(4)}</span>
+                    {note && <span style={{ fontFamily: mono, fontSize: 10, color: C.muted }}>{note}</span>}
+                    {isPrice && priceZone && <span style={{ fontFamily: mono, fontSize: 10, color: priceZone.color, background: priceZone.color+"18", border:`1px solid ${priceZone.color}44`, borderRadius:3, padding:"1px 6px" }}>{priceZone.label}</span>}
+                  </div>
+                );
+              };
+
+              return (
+                <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+
+                  {/* Header metrics row */}
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(190px,1fr))", gap: 12 }}>
+                    <MetricCard label="SUI / USDT"
+                      value={sui?.value}         change={sui?.change}
+                      source={sui?.source}       updatedAt={sui?.updatedAt}
+                      stale={!sui}               flash={flash.sui} />
+                    <MetricCard label="SUI Funding Rate"
+                      value={suiF?.value}
+                      source={suiF?.source}      updatedAt={suiF?.updatedAt}
+                      stale={!suiF}              flash={flash.sui_funding}
+                      unit="%"
+                      signalColor={suiFundZone.color}
+                      changeLabel={suiF?.value != null ? suiFundZone.label : null}
+                      subtext={suiFundZone.subtext} />
+                    <MetricCard label="SUI Open Interest"
+                      value={suiOI?.value}
+                      source={suiOI?.source}     updatedAt={suiOI?.updatedAt}
+                      stale={!suiOI}             flash={flash.sui_oi}
+                      signalColor={suiOIZone.color}
+                      changeLabel={suiOI?.value != null ? suiOIZone.label : null}
+                      subtext={suiOIZone.subtext} />
+                    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: "14px 16px" }}>
+                      <div style={{ fontFamily: mono, fontSize: 11, color: C.muted, marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.07em" }}>24H Range</div>
+                      <div style={{ fontFamily: mono, fontSize: 12, color: C.text, lineHeight: 2 }}>
+                        <div>H: <span style={{ color: C.green }}>${isNaN(parseFloat(d.sui_high?.value)) ? "—" : parseFloat(d.sui_high?.value).toFixed(4)}</span></div>
+                        <div>L: <span style={{ color: C.red }}>${isNaN(parseFloat(d.sui_low?.value)) ? "—" : parseFloat(d.sui_low?.value).toFixed(4)}</span></div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* S/R + Range Chart */}
+                  <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: "16px 20px" }}>
+                    <SectionLabel>Support & Resistance — Pivot Levels (Daily) + 30-Day Range</SectionLabel>
+                    <div style={{ display: "flex", gap: 32, flexWrap: "wrap" }}>
+
+                      {/* Level list */}
+                      <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 260 }}>
+                        {levelRow("R2",    r2,    C.green,     "2nd resistance")}
+                        {levelRow("R1",    r1,    C.chartBlue, "1st resistance")}
+                        {levelRow("PP",    pp,    C.amber,     "Pivot point")}
+                        {levelRow("PRICE", price, C.text,      null)}
+                        {levelRow("S1",    s1,    C.amber,     "1st support")}
+                        {levelRow("S2",    s2,    C.red,       "2nd support")}
+                        <div style={{ marginTop: 4, borderTop: `1px solid ${C.border}`, paddingTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
+                          {levelRow("7D High", wh, C.green,  "weekly high")}
+                          {levelRow("7D Low",  wl, C.red,    "weekly low")}
+                          {levelRow("30D High",mh, C.green,  "monthly high")}
+                          {levelRow("30D Low", ml, C.red,    "monthly low")}
+                        </div>
+                      </div>
+
+                      {/* Vertical range bar */}
+                      <div style={{ flex: 1, minWidth: 160, display: "flex", gap: 12, alignItems: "stretch" }}>
+                        {rangePct !== null && (
+                          <div style={{ display: "flex", flexDirection: "column", justifyContent: "space-between", alignItems: "center" }}>
+                            {/* Vertical bar */}
+                            <div style={{ position: "relative", width: 24, flex: 1,
+                              background: `linear-gradient(to bottom, ${C.green}, ${C.chartBlue}, ${C.amber}, ${C.red})`,
+                              borderRadius: 6, margin: "4px 0" }}>
+                              {/* Price needle */}
+                              <div style={{
+                                position: "absolute",
+                                top: `${100 - rangePct}%`,
+                                left: "50%", transform: "translate(-50%, -50%)",
+                                width: 36, height: 3, borderRadius: 2,
+                                background: C.text, boxShadow: "0 0 6px #000",
+                                zIndex: 2
+                              }} />
+                              {/* Level ticks */}
+                              {[
+                                { val: r2, col: C.green },
+                                { val: r1, col: C.chartBlue },
+                                { val: pp, col: C.amber },
+                                { val: s1, col: C.amber },
+                                { val: s2, col: C.red },
+                              ].map(({ val, col }) => {
+                                const p = lvlPct(val);
+                                if (p === null) return null;
+                                return (
+                                  <div key={val} style={{
+                                    position: "absolute", top: `${100 - p}%`,
+                                    left: "100%", marginLeft: 2,
+                                    width: 6, height: 1, background: col, opacity: 0.8
+                                  }} />
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                        {/* Labels alongside bar */}
+                        {rangePct !== null && (
+                          <div style={{ flex: 1, position: "relative", minHeight: 200 }}>
+                            {[
+                              { val: mh,  label: "30D High", col: C.green },
+                              { val: r2,  label: "R2",       col: C.green },
+                              { val: r1,  label: "R1",       col: C.chartBlue },
+                              { val: pp,  label: "PP",       col: C.amber },
+                              { val: s1,  label: "S1",       col: C.amber },
+                              { val: s2,  label: "S2",       col: C.red },
+                              { val: ml,  label: "30D Low",  col: C.red },
+                            ].map(({ val, label, col }) => {
+                              const p = lvlPct(val);
+                              if (p === null || isNaN(val)) return null;
+                              return (
+                                <div key={label} style={{
+                                  position: "absolute", top: `${100 - p}%`,
+                                  transform: "translateY(-50%)",
+                                  display: "flex", gap: 6, alignItems: "center"
+                                }}>
+                                  <span style={{ fontFamily: mono, fontSize: 9, color: col, minWidth: 40 }}>{label}</span>
+                                  <span style={{ fontFamily: mono, fontSize: 9, color: C.muted }}>${val.toFixed(4)}</span>
+                                </div>
+                              );
+                            })}
+                            {/* Price label */}
+                            {!isNaN(price) && (
+                              <div style={{
+                                position: "absolute", top: `${100 - rangePct}%`,
+                                transform: "translateY(-50%)",
+                                display: "flex", gap: 6, alignItems: "center"
+                              }}>
+                                <span style={{ fontFamily: mono, fontSize: 10, color: C.text, fontWeight: 700, minWidth: 40 }}>NOW</span>
+                                <span style={{ fontFamily: mono, fontSize: 10, color: C.text, fontWeight: 700 }}>${price.toFixed(4)}</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        {rangePct === null && (
+                          <div style={{ fontFamily: mono, fontSize: 12, color: C.muted, paddingTop: 8 }}>Run scan to load S/R levels</div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Liquidation note */}
+                  <div style={{ background: C.surface, border: `1px solid ${C.amber}22`, borderRadius: 8, padding: "14px 18px",
+                    display: "flex", gap: 12, alignItems: "flex-start" }}>
+                    <span style={{ color: C.amber, fontSize: 16, marginTop: 1 }}>⚠</span>
+                    <div>
+                      <div style={{ fontFamily: sans, fontWeight: 600, fontSize: 13, color: C.amber, marginBottom: 4 }}>Liquidation Heatmap — Coinglass Pro Required</div>
+                      <div style={{ fontFamily: mono, fontSize: 11, color: C.muted, lineHeight: 1.8 }}>
+                        Full liquidation level data is proprietary to Coinglass and requires a paid API key (~$99+/mo).
+                        As a proxy: watch <span style={{ color: C.text }}>OI spikes</span> (leverage building) combined with
+                        <span style={{ color: C.text }}> funding rate extremes</span> — these identify when a squeeze is likely
+                        without needing exact liq prices. If you get a Coinglass API key, drop it in and this tab can be extended.
+                      </div>
+                    </div>
+                  </div>
+
+                </div>
+              );
+            })()}
 
             {/* CATALYSTS */}
             {tab === "catalysts" && (
