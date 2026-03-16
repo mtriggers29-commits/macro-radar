@@ -98,9 +98,8 @@
       fg:       p => parseFloat(p.value) < 20 ? "bull" : parseFloat(p.value) > 75 ? "bear" : "neutral",
       y10:      p => p.change > 0 ? "bear" : "bull",
       y2:       p => p.change > 0 ? "bear" : "bull",
-      rrp:      p => p.change > 0 ? "bull" : "bear",
+      netliq:   p => p.change > 0 ? "bull" : p.change < 0 ? "bear" : "neutral",
       fedfunds: p => p.change > 0 ? "bear" : "bull",
-      tga:      p => p.change < 0 ? "bull" : "neutral",
       cpi:      p => p.change < 0 ? "bull" : p.change > 0 ? "bear" : "neutral",
       spread:   p => parseFloat(p.value) < 0 ? "bear" : "neutral",
       oi:       p => {
@@ -341,6 +340,19 @@
     //  +5 to +20% Active       — green  (healthy participation, dry powder building)
     //  -5 to +5%  Normal       — blue   (routine variance, no signal)
     //  < -5%    Declining      — red    (low activity, complacency or capital already deployed)
+    // ── Net Liquidity zone (WALCL − TGA − RRP) ───────────────────────────
+    // Rising = more liquidity in system = bullish for risk assets
+    // Falling = liquidity draining = bearish
+    function netliqZone(value, change) {
+      if (!value || change == null || isNaN(change)) return { color: C.muted, label: null, subtext: "WALCL − TGA − RRP" };
+      const chg = parseFloat(change);
+      if (chg > 1)   return { color: C.green,     label: `▲ +${chg.toFixed(1)}% — Expanding`,  subtext: "Liquidity rising · bullish for risk assets"  };
+      if (chg > 0)   return { color: C.chartBlue, label: `▲ +${chg.toFixed(2)}% — Slight Rise`, subtext: "Mild liquidity expansion"                    };
+      if (chg === 0) return { color: C.chartBlue, label: `► Unchanged`,                          subtext: "Flat liquidity · no strong signal"           };
+      if (chg > -1)  return { color: C.amber,     label: `▼ ${chg.toFixed(2)}% — Slight Drain`, subtext: "Mild liquidity contraction · watch closely"  };
+      return              { color: C.red,        label: `▼ ${chg.toFixed(1)}% — Contracting`,  subtext: "⚠ Liquidity draining · bearish for risk assets" };
+    }
+
     function stabvolZone(value, change) {
       if (change == null || isNaN(change) || !value) return { color: C.muted, label: null, subtext: "24h USDT volume · activity signal" };
       const chg = parseFloat(change);
@@ -598,6 +610,20 @@
       // ── Stablecoin Volume derived signal ──────────────────────────────
       const stabvolZoneData = stabvolZone(d.stabvol?.value, d.stabvol?.change);
 
+      // ── Net Liquidity = WALCL − TGA − RRP ────────────────────────────
+      // Parse raw values from sheet — strip $, T, B suffixes
+      const parseT = v => { if (!v) return null; const n = parseFloat(String(v).replace(/[^0-9.]/g,"")); return String(v).includes("T") ? n * 1000 : n; }; // returns $B
+      const parseB = v => { if (!v) return null; return parseFloat(String(v).replace(/[^0-9.]/g,"")); };
+      const walclB  = parseT(d.walcl?.value);  // WALCL in $B
+      const tgaB    = parseB(d.tga?.value);    // TGA already in $B
+      const rrpB    = parseB(d.rrp?.value);    // RRP in $B
+      const netliqB = (walclB != null && tgaB != null && rrpB != null)
+        ? +(walclB - tgaB - rrpB).toFixed(0) : null;
+      // % change: use walcl change as proxy (dominant component)
+      const netliqChg = d.walcl?.change != null ? parseFloat(d.walcl.change) : null;
+      const netliqVal = netliqB != null ? "$" + (netliqB / 1000).toFixed(2) + "T" : null;
+      const netliqZoneData = netliqZone(netliqVal, netliqChg);
+
       return (
         <div style={{ background: C.bg, minHeight: "100vh", paddingBottom: 40 }}>
           {/* Header */}
@@ -681,16 +707,13 @@
                 <div>
                   <SectionLabel>Liquidity Flows</SectionLabel>
                   <div style={grid}>
-                    <MetricCard label="RRP"
-                      value={d.rrp?.value}        change={d.rrp?.change}
-                      source={d.rrp?.source}      updatedAt={d.rrp?.updatedAt}
-                      stale={!d.rrp}              flash={flash.rrp}
-                      unit={d.rrp?.unit}          subtext="Near zero = tank empty" />
-                    <MetricCard label="TGA Balance"
-                      value={d.tga?.value}        change={d.tga?.change}
-                      source={d.tga?.source}      updatedAt={d.tga?.updatedAt}
-                      stale={!d.tga}              flash={flash.tga}
-                      subtext="↓ Drawdown = bullish" />
+                    <MetricCard label="Net Liquidity"
+                      value={netliqVal}
+                      source="WALCL−TGA−RRP"  updatedAt={d.walcl?.updatedAt}
+                      stale={!d.walcl || !d.tga || !d.rrp}
+                      signalColor={netliqZoneData.color}
+                      changeLabel={netliqVal != null ? netliqZoneData.label : null}
+                      subtext={netliqZoneData.subtext} />
                     <MetricCard label="Fed Balance Sheet"
                       value={d.walcl?.value}      change={d.walcl?.change}
                       source={d.walcl?.source}    updatedAt={d.walcl?.updatedAt}
