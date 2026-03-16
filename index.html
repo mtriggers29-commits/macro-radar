@@ -611,17 +611,28 @@
       const stabvolZoneData = stabvolZone(d.stabvol?.value, d.stabvol?.change);
 
       // ── Net Liquidity = WALCL − TGA − RRP ────────────────────────────
-      // Parse raw values from sheet — strip $, T, B suffixes
-      const parseT = v => { if (!v) return null; const n = parseFloat(String(v).replace(/[^0-9.]/g,"")); return String(v).includes("T") ? n * 1000 : n; }; // returns $B
-      const parseB = v => { if (!v) return null; return parseFloat(String(v).replace(/[^0-9.]/g,"")); };
-      const walclB  = parseT(d.walcl?.value);  // WALCL in $B
-      const tgaB    = parseB(d.tga?.value);    // TGA already in $B
-      const rrpB    = parseB(d.rrp?.value);    // RRP in $B
-      const netliqB = (walclB != null && tgaB != null && rrpB != null)
-        ? +(walclB - tgaB - rrpB).toFixed(0) : null;
-      // % change: use walcl change as proxy (dominant component)
-      const netliqChg = d.walcl?.change != null ? parseFloat(d.walcl.change) : null;
+      // WALCL: stored as "6.65T" → convert to $B = 6650
+      // TGA:   stored as "$838.2B" → strip $ = 838.2
+      // RRP:   stored as "0.43" with unit "B" → 0.43
+      const toB = v => {
+        if (!v) return null;
+        const s = String(v);
+        const n = parseFloat(s.replace(/[^0-9.]/g, ""));
+        if (isNaN(n)) return null;
+        if (s.includes("T")) return n * 1000;  // trillions → billions
+        return n;                               // already in billions
+      };
+      const walclB   = toB(d.walcl?.value);   // e.g. 6650
+      const tgaB     = toB(d.tga?.value);     // e.g. 838.2
+      const rrpB     = toB(d.rrp?.value);     // e.g. 0.43
+      const netliqB  = (walclB != null && tgaB != null && rrpB != null)
+        ? +(walclB - tgaB - rrpB).toFixed(1) : null;
       const netliqVal = netliqB != null ? "$" + (netliqB / 1000).toFixed(2) + "T" : null;
+      // % change: WALCL raw change is in $M, convert to % of WALCL value
+      const walclChgM  = d.walcl?.change != null ? parseFloat(d.walcl.change) : null;
+      const netliqChg  = (walclChgM != null && walclB != null && walclB > 0)
+        ? +((walclChgM / 1000) / walclB * 100).toFixed(2)  // $M change → % of $B total
+        : null;
       const netliqZoneData = netliqZone(netliqVal, netliqChg);
 
       return (
