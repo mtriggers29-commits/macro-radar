@@ -99,6 +99,8 @@
       y10:      p => p.change > 0 ? "bear" : "bull",
       y2:       p => p.change > 0 ? "bear" : "bull",
       fedfunds: p => p.change > 0 ? "bear" : "bull",
+      tga:      p => p.change < 0 ? "bull" : "neutral",   // loaded for netliq calc
+      rrp:      p => p.change > 0 ? "bull" : "bear",      // loaded for netliq calc
       cpi:      p => p.change < 0 ? "bull" : p.change > 0 ? "bear" : "neutral",
       spread:   p => parseFloat(p.value) < 0 ? "bear" : "neutral",
       oi:       p => {
@@ -720,7 +722,7 @@
                     <MetricCard label="Net Liquidity"
                       value={netliqVal}
                       source="WALCL−TGA−RRP"  updatedAt={d.walcl?.updatedAt}
-                      stale={!d.walcl || !d.tga || !d.rrp}
+                      stale={!d.walcl}
                       signalColor={netliqZoneData.color}
                       changeLabel={netliqVal != null ? netliqZoneData.label : null}
                       subtext={netliqZoneData.subtext} />
