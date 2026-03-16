@@ -563,7 +563,10 @@
       const canvasRef                   = React.useRef(null);
       const chartRef                    = React.useRef(null);
 
-      const FRED_WALCL = "https://fred.stlouisfed.org/graph/fredgraph.csv?id=WALCL";
+      // FRED blocks direct browser fetches (CORS). Route via proxy.
+      // CoinGecko supports browser CORS directly.
+      const FRED_RAW   = "https://fred.stlouisfed.org/graph/fredgraph.csv?id=WALCL";
+      const FRED_WALCL = "https://corsproxy.io/?" + encodeURIComponent(FRED_RAW);
       const CG_BTC     = "https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=usd&days=365&interval=weekly";
 
       const fetchChartData = React.useCallback(async () => {
@@ -571,12 +574,17 @@
         setError(null);
         try {
           // Fetch WALCL and BTC in parallel
-          const [walclRes, btcRes] = await Promise.all([
-            fetch(FRED_WALCL),
-            fetch(CG_BTC),
-          ]);
-          if (!walclRes.ok) throw new Error("FRED WALCL fetch failed");
-          if (!btcRes.ok)   throw new Error("CoinGecko BTC fetch failed");
+          const FRED_FALLBACK = "https://api.allorigins.win/raw?url=" + encodeURIComponent(FRED_RAW);
+          let walclRes;
+          try {
+            walclRes = await fetch(FRED_WALCL);
+            if (!walclRes.ok) throw new Error();
+          } catch {
+            walclRes = await fetch(FRED_FALLBACK);
+          }
+          const btcRes = await fetch(CG_BTC);
+          if (!walclRes.ok) throw new Error("FRED WALCL fetch failed — both proxies blocked");
+          if (!btcRes.ok)   throw new Error("CoinGecko BTC fetch failed (HTTP " + btcRes.status + ")");
 
           const walclText = await walclRes.text();
           const btcJson   = await btcRes.json();
@@ -748,7 +756,7 @@
           <div style={{ padding: "12px 16px" }}>
             {error && (
               <div style={{ fontFamily: mono, fontSize: 11, color: C.red, padding: "20px 0" }}>
-                ✗ {error} — CORS may block direct FRED/CoinGecko fetch. Try on localhost or Netlify.
+                ✗ {error} — if this persists the CORS proxy may be rate-limited, try again in a minute.
               </div>
             )}
             {!chartData && !loading && !error && (
@@ -884,10 +892,8 @@
         ? +(walclB - tgaB - rrpB).toFixed(1) : null;
       const netliqVal = netliqB != null ? "$" + (netliqB / 1000).toFixed(2) + "T" : null;
       // % change: WALCL raw change is in $M, convert to % of WALCL value
-      const walclChgM  = d.walcl?.change != null ? parseFloat(d.walcl.change) : null;
-      const netliqChg  = (walclChgM != null && walclB != null && walclB > 0)
-        ? +((walclChgM / 1000) / walclB * 100).toFixed(2)  // $M change → % of $B total
-        : null;
+      // WALCL change is now stored as % — use directly for netliq signal
+      const netliqChg  = d.walcl?.change != null ? parseFloat(d.walcl.change) : null;
       const netliqZoneData = netliqZone(netliqVal, netliqChg);
 
       return (
