@@ -564,10 +564,10 @@
       const chartRef                    = React.useRef(null);
 
       // FRED blocks direct browser fetches (CORS). Route via proxy.
-      // CoinGecko supports browser CORS directly.
+      // Binance public klines API supports browser CORS — no auth, no rate limits.
       const FRED_RAW   = "https://fred.stlouisfed.org/graph/fredgraph.csv?id=WALCL";
       const FRED_WALCL = "https://corsproxy.io/?" + encodeURIComponent(FRED_RAW);
-      const CG_BTC     = "https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=usd&days=365&interval=weekly";
+      const BTC_URL    = "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1w&limit=65";
 
       const fetchChartData = React.useCallback(async () => {
         setLoading(true);
@@ -582,9 +582,9 @@
           } catch {
             walclRes = await fetch(FRED_FALLBACK);
           }
-          const btcRes = await fetch(CG_BTC);
+          const btcRes = await fetch(BTC_URL);
           if (!walclRes.ok) throw new Error("FRED WALCL fetch failed — both proxies blocked");
-          if (!btcRes.ok)   throw new Error("CoinGecko BTC fetch failed (HTTP " + btcRes.status + ")");
+          if (!btcRes.ok)   throw new Error("Binance BTC fetch failed (HTTP " + btcRes.status + ")");
 
           const walclText = await walclRes.text();
           const btcJson   = await btcRes.json();
@@ -595,8 +595,8 @@
             .filter(r => !isNaN(r.val))
             .slice(-60);
 
-          // Parse BTC weekly closes
-          const btcPrices = btcJson.prices.map(([ts, price]) => ({ date: new Date(ts), price }));
+          // Parse Binance klines — format: [openTime, open, high, low, close, ...]
+          const btcPrices = btcJson.map(k => ({ date: new Date(k[0]), price: parseFloat(k[4]) })); // close price
 
           setChartData({ walcl: walclRows, btc: btcPrices });
         } catch(e) {
@@ -780,7 +780,7 @@
                 <span style={{ color: C.chartBlue }}>━</span> Fed Balance Sheet (WALCL) shifted {lagWeeks} weeks forward &nbsp;·&nbsp;
                 <span style={{ color: C.amber }}>━</span> BTC price log scale &nbsp;·&nbsp;
                 Liquidity leads BTC by ~{lagWeeks}w historically &nbsp;·&nbsp;
-                Sources: FRED/WALCL · CoinGecko
+                Sources: FRED/WALCL · Binance/BTCUSDT
               </div>
             )}
           </div>
