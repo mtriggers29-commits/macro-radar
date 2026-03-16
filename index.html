@@ -9,6 +9,8 @@
   <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0d1117; color: #e6edf3; font-family: 'Inter', system-ui, sans-serif; }
@@ -549,6 +551,235 @@
       );
     }
 
+    // ── Liquidity vs BTC Chart ────────────────────────────────────────────
+    // Fetches WALCL (Fed balance sheet) from FRED and BTC price from CoinGecko
+    // directly in the browser. WALCL series is shifted forward 10 weeks on the
+    // x-axis to visualise the liquidity lead on BTC price.
+    function LiquidityChart() {
+      const [chartData, setChartData]   = React.useState(null);
+      const [loading, setLoading]       = React.useState(false);
+      const [error, setError]           = React.useState(null);
+      const [lagWeeks, setLagWeeks]     = React.useState(10);
+      const canvasRef                   = React.useRef(null);
+      const chartRef                    = React.useRef(null);
+
+      const FRED_WALCL = "https://fred.stlouisfed.org/graph/fredgraph.csv?id=WALCL";
+      const CG_BTC     = "https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=usd&days=365&interval=weekly";
+
+      const fetchChartData = React.useCallback(async () => {
+        setLoading(true);
+        setError(null);
+        try {
+          // Fetch WALCL and BTC in parallel
+          const [walclRes, btcRes] = await Promise.all([
+            fetch(FRED_WALCL),
+            fetch(CG_BTC),
+          ]);
+          if (!walclRes.ok) throw new Error("FRED WALCL fetch failed");
+          if (!btcRes.ok)   throw new Error("CoinGecko BTC fetch failed");
+
+          const walclText = await walclRes.text();
+          const btcJson   = await btcRes.json();
+
+          // Parse WALCL CSV — last 60 weeks
+          const walclRows = walclText.trim().split("\n").slice(1)
+            .map(r => { const [d, v] = r.split(","); return { date: new Date(d), val: parseFloat(v) / 1e6 }; }) // $T
+            .filter(r => !isNaN(r.val))
+            .slice(-60);
+
+          // Parse BTC weekly closes
+          const btcPrices = btcJson.prices.map(([ts, price]) => ({ date: new Date(ts), price }));
+
+          setChartData({ walcl: walclRows, btc: btcPrices });
+        } catch(e) {
+          setError(e.message);
+        }
+        setLoading(false);
+      }, []);
+
+      // Draw chart whenever data or lag changes
+      React.useEffect(() => {
+        if (!chartData || !canvasRef.current) return;
+
+        // Destroy previous chart instance
+        if (chartRef.current) { chartRef.current.destroy(); chartRef.current = null; }
+
+        const { walcl, btc } = chartData;
+        const LAG_MS = lagWeeks * 7 * 24 * 3600 * 1000;
+
+        // Shift WALCL dates forward by lag
+        const walclShifted = walcl.map(r => ({ x: new Date(r.date.getTime() + LAG_MS), y: r.val }));
+
+        // BTC data as {x, y}
+        const btcPoints = btc.map(r => ({ x: r.date, y: r.price }));
+
+        const ctx = canvasRef.current.getContext("2d");
+        chartRef.current = new window.Chart(ctx, {
+          type: "line",
+          data: {
+            datasets: [
+              {
+                label: `Fed Balance Sheet (+${lagWeeks}w lead)`,
+                data: walclShifted,
+                borderColor: "#79c6ff",
+                backgroundColor: "#79c6ff18",
+                borderWidth: 2,
+                pointRadius: 0,
+                tension: 0.3,
+                yAxisID: "yLiq",
+                fill: true,
+              },
+              {
+                label: "BTC Price (log)",
+                data: btcPoints,
+                borderColor: "#f0b453",
+                backgroundColor: "transparent",
+                borderWidth: 2,
+                pointRadius: 0,
+                tension: 0.3,
+                yAxisID: "yBTC",
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: "index", intersect: false },
+            plugins: {
+              legend: {
+                labels: { color: "#8b949e", font: { family: "'JetBrains Mono', monospace", size: 11 } }
+              },
+              tooltip: {
+                backgroundColor: "#161b22",
+                borderColor: "#30363d",
+                borderWidth: 1,
+                titleColor: "#e6edf3",
+                bodyColor: "#8b949e",
+                titleFont: { family: "'JetBrains Mono', monospace", size: 11 },
+                bodyFont:  { family: "'JetBrains Mono', monospace", size: 11 },
+                callbacks: {
+                  title: items => {
+                    const d = new Date(items[0].parsed.x);
+                    return d.toLocaleDateString("en-GB", { day:"numeric", month:"short", year:"numeric" });
+                  },
+                  label: item => {
+                    if (item.datasetIndex === 0) return ` Liquidity: $${item.parsed.y.toFixed(2)}T`;
+                    return ` BTC: $${Math.round(item.parsed.y).toLocaleString()}`;
+                  }
+                }
+              },
+            },
+            scales: {
+              x: {
+                type: "time",
+                time: { unit: "month", displayFormats: { month: "MMM yy" } },
+                grid:  { color: "#30363d44" },
+                ticks: { color: "#8b949e", font: { family: "'JetBrains Mono', monospace", size: 10 }, maxRotation: 0 },
+              },
+              yLiq: {
+                type: "linear",
+                position: "left",
+                grid:  { color: "#30363d44" },
+                ticks: {
+                  color: "#79c6ff",
+                  font: { family: "'JetBrains Mono', monospace", size: 10 },
+                  callback: v => "$" + v.toFixed(1) + "T"
+                },
+                title: { display: true, text: "Fed Balance Sheet ($T)", color: "#79c6ff", font: { size: 10 } },
+              },
+              yBTC: {
+                type: "logarithmic",
+                position: "right",
+                grid: { drawOnChartArea: false },
+                ticks: {
+                  color: "#f0b453",
+                  font: { family: "'JetBrains Mono', monospace", size: 10 },
+                  callback: v => "$" + (v >= 1000 ? Math.round(v/1000)+"k" : v)
+                },
+                title: { display: true, text: "BTC Price (log)", color: "#f0b453", font: { size: 10 } },
+              },
+            },
+          },
+        });
+      }, [chartData, lagWeeks]);
+
+      // Load chart.js adapter for time scale
+      React.useEffect(() => {
+        if (!window.Chart) return;
+        // chart.js time scale needs date adapter — use built-in if available
+      }, []);
+
+      return (
+        <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, overflow: "hidden" }}>
+          {/* Header */}
+          <div style={{ padding: "12px 16px", borderBottom: `1px solid ${C.border}`,
+            display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontFamily: mono, fontSize: 11, color: C.muted, textTransform: "uppercase", letterSpacing: "0.1em" }}>
+                Liquidity vs BTC
+              </span>
+              <span style={{ fontFamily: mono, fontSize: 9, color: C.chartBlue,
+                background: C.chartBlue+"18", border:`1px solid ${C.chartBlue}44`, borderRadius: 3, padding: "1px 6px" }}>
+                WALCL shifted +{lagWeeks}w
+              </span>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              {/* Lag slider */}
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ fontFamily: mono, fontSize: 10, color: C.muted }}>Lag:</span>
+                {[8,10,12,14].map(w => (
+                  <button key={w} onClick={() => setLagWeeks(w)}
+                    style={{ fontFamily: mono, fontSize: 10, padding: "3px 8px", borderRadius: 4, border: "none", cursor: "pointer",
+                      background: lagWeeks === w ? C.chartBlue : C.border,
+                      color: lagWeeks === w ? "#0d1117" : C.muted }}>
+                    {w}w
+                  </button>
+                ))}
+              </div>
+              <button onClick={fetchChartData} disabled={loading}
+                style={{ fontFamily: mono, fontSize: 10, padding: "4px 12px", borderRadius: 4, border: "none",
+                  background: loading ? C.border : C.blue, color: "#0d1117", cursor: "pointer", opacity: loading ? 0.7 : 1 }}>
+                {loading ? "Loading..." : "Load Chart"}
+              </button>
+            </div>
+          </div>
+
+          {/* Chart area */}
+          <div style={{ padding: "12px 16px" }}>
+            {error && (
+              <div style={{ fontFamily: mono, fontSize: 11, color: C.red, padding: "20px 0" }}>
+                ✗ {error} — CORS may block direct FRED/CoinGecko fetch. Try on localhost or Netlify.
+              </div>
+            )}
+            {!chartData && !loading && !error && (
+              <div style={{ fontFamily: mono, fontSize: 11, color: C.muted, padding: "40px 0", textAlign: "center" }}>
+                Click <span style={{ color: C.blue }}>Load Chart</span> to fetch 1 year of WALCL + BTC data
+              </div>
+            )}
+            {(chartData || loading) && (
+              <div style={{ position: "relative", height: 340 }}>
+                {loading && (
+                  <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center",
+                    fontFamily: mono, fontSize: 11, color: C.muted }}>
+                    Fetching FRED + CoinGecko...
+                  </div>
+                )}
+                <canvas ref={canvasRef} style={{ display: loading ? "none" : "block" }} />
+              </div>
+            )}
+            {chartData && !loading && (
+              <div style={{ marginTop: 8, fontFamily: mono, fontSize: 10, color: C.muted, lineHeight: 1.8 }}>
+                <span style={{ color: C.chartBlue }}>━</span> Fed Balance Sheet (WALCL) shifted {lagWeeks} weeks forward &nbsp;·&nbsp;
+                <span style={{ color: C.amber }}>━</span> BTC price log scale &nbsp;·&nbsp;
+                Liquidity leads BTC by ~{lagWeeks}w historically &nbsp;·&nbsp;
+                Sources: FRED/WALCL · CoinGecko
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
     function App() {
       const [tab, setTab]           = useState("macro");
       const [scanning, setScanning] = useState(false);
@@ -789,6 +1020,10 @@
                       subtext="YoY — lower = risk-on" />
                   </div>
                 </div>
+
+                {/* ── Liquidity vs BTC Chart ── */}
+                <LiquidityChart />
+
               </div>
             )}
 
