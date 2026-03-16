@@ -98,7 +98,6 @@
       fg:       p => parseFloat(p.value) < 20 ? "bull" : parseFloat(p.value) > 75 ? "bear" : "neutral",
       y10:      p => p.change > 0 ? "bear" : "bull",
       y2:       p => p.change > 0 ? "bear" : "bull",
-      netliq:   p => p.change > 0 ? "bull" : p.change < 0 ? "bear" : "neutral",
       fedfunds: p => p.change > 0 ? "bear" : "bull",
       cpi:      p => p.change < 0 ? "bull" : p.change > 0 ? "bear" : "neutral",
       spread:   p => parseFloat(p.value) < 0 ? "bear" : "neutral",
