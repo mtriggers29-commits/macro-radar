@@ -76,6 +76,14 @@
 
     const SIGNAL_FN = {
       dxy:      p => p.change < 0 ? "bull" : "bear",
+      vix:      p => {
+        const v = parseFloat(p.value);
+        if (isNaN(v))  return "neutral";
+        if (v >= 40)   return "bear";   // extreme panic
+        if (v >= 30)   return "bear";   // high fear
+        if (v >= 20)   return "neutral";// elevated
+        return "bull";                  // calm market
+      },
       m2:       p => p.change > 0 ? "bull" : "bear",
       walcl:    p => p.change > 0 ? "bull" : "bear",
       wti:      p => p.change > 0 ? "bear" : "bull",
@@ -254,7 +262,19 @@
       return C.chartBlue;
     }
 
-    // ── Funding Rate 5-zone signal ────────────────────────────────────────
+    // ── VIX 4-zone signal ─────────────────────────────────────────────────
+    // <20  = Low volatility — calm, risk-on conditions
+    // 20-30 = Elevated — caution, uncertainty building
+    // 30-40 = High fear — stress, risk-off likely
+    // 40+  = Extreme panic — capitulation territory, potential reversal
+    function vixZone(value) {
+      const v = parseFloat(value);
+      if (isNaN(v) || !value) return { color: C.muted, label: null, subtext: "S&P 500 30-day implied vol" };
+      if (v >= 40) return { color: C.red,       label: `▲ ${v.toFixed(2)} — Extreme Panic`,  subtext: "⚠ Capitulation territory · watch for reversal" };
+      if (v >= 30) return { color: C.red,       label: `▲ ${v.toFixed(2)} — High Fear`,      subtext: "Risk-off · equity stress elevated"              };
+      if (v >= 20) return { color: C.amber,     label: `► ${v.toFixed(2)} — Elevated`,       subtext: "Caution · uncertainty building"                 };
+      return            { color: C.green,      label: `▼ ${v.toFixed(2)} — Calm`,           subtext: "Low volatility · risk-on conditions"            };
+    }
     // Zones (% per 8h):
     //  > +0.05%  Overheated Bull  — red    (crowded longs, long squeeze risk)
     //  +0.01 to +0.05  Bullish    — green  (healthy long bias)
@@ -585,6 +605,9 @@
       // ── Yield Curve derived signal ────────────────────────────────────
       const spreadNum   = parseFloat(d.spread?.value);
       const spreadColor = spreadSignalColor(d.spread?.value);
+
+      // ── VIX derived signal ────────────────────────────────────────────
+      const vixZoneData = vixZone(d.vix?.value);
       const spreadLabel = !d.spread?.value ? null
         : isNaN(spreadNum) ? null
         : spreadNum < 0   ? `▼ ${spreadNum.toFixed(2)}% — Inverted`
@@ -688,6 +711,13 @@
                       source={d.dxy?.source}      updatedAt={d.dxy?.updatedAt}
                       stale={!d.dxy}              flash={flash.dxy}
                       invertSignal                subtext="↓ Falling = risk-on" />
+                    <MetricCard label="VIX"
+                      value={d.vix?.value}
+                      source={d.vix?.source}      updatedAt={d.vix?.updatedAt}
+                      stale={!d.vix}              flash={flash.vix}
+                      signalColor={vixZoneData.color}
+                      changeLabel={d.vix?.value != null ? vixZoneData.label : null}
+                      subtext={vixZoneData.subtext} />
                     <MetricCard label="10Y Yield"
                       value={d.y10?.value}        change={d.y10?.change}
                       source={d.y10?.source}      updatedAt={d.y10?.updatedAt}
