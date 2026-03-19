@@ -113,6 +113,14 @@
       rrp:      p => p.change > 0 ? "bull" : "bear",      // loaded for netliq calc
       cpi:      p => p.change < 0 ? "bull" : p.change > 0 ? "bear" : "neutral",
       spread:   p => parseFloat(p.value) < 0 ? "bear" : "neutral",
+      ism:      p => {
+        const v = parseFloat(p.value);
+        if (isNaN(v)) return "neutral";
+        if (v >= 55)  return "bull";
+        if (v >= 50)  return "bull";
+        if (v >= 45)  return "bear";
+        return "bear";
+      },
       oi:       p => {
         // Signal resolved in oiZone() using price context — use change as proxy here
         const chg = p.change;
@@ -366,6 +374,24 @@
     // ── Net Liquidity zone (WALCL − TGA − RRP) ───────────────────────────
     // Rising = more liquidity in system = bullish for risk assets
     // Falling = liquidity draining = bearish
+    // ── ISM Manufacturing PMI zone ────────────────────────────────────────
+    // Level + direction both matter:
+    //  ≥ 55        Strong expansion  — green
+    //  50–55       Mild expansion    — chartBlue
+    //  45–50       Mild contraction  — amber
+    //  < 45        Deep contraction  — red
+    // Change (month-over-month points) shown as trend direction
+    function ismZone(value, change) {
+      const v   = parseFloat(value);
+      const chg = parseFloat(change);
+      if (isNaN(v) || !value) return { color: C.muted, label: null, subtext: "ISM Manufacturing PMI · >50 = expansion" };
+      const trend = !isNaN(chg) ? (chg > 0 ? ` ▲ +${chg.toFixed(1)}` : chg < 0 ? ` ▼ ${chg.toFixed(1)}` : "") : "";
+      if (v >= 55)  return { color: C.green,     label: `${v.toFixed(1)}${trend} — Strong Expansion`,  subtext: "Manufacturing expanding rapidly · bullish"     };
+      if (v >= 50)  return { color: C.chartBlue,  label: `${v.toFixed(1)}${trend} — Expanding`,         subtext: "Above 50 · growth cycle intact"                };
+      if (v >= 45)  return { color: C.amber,      label: `${v.toFixed(1)}${trend} — Contracting`,       subtext: "Below 50 · watch for deterioration"           };
+      return             { color: C.red,         label: `${v.toFixed(1)}${trend} — Deep Contraction`, subtext: "⚠ Below 45 · recession signal"                };
+    }
+
     function netliqZone(value, change) {
       if (!value || change == null || isNaN(change)) return { color: C.muted, label: null, subtext: "WALCL − TGA − RRP" };
       const chg = parseFloat(change);
@@ -847,6 +873,9 @@
 
       // ── VIX derived signal ────────────────────────────────────────────
       const vixZoneData = vixZone(d.vix?.value);
+
+      // ── ISM PMI derived signal ────────────────────────────────────────
+      const ismZoneData = ismZone(d.ism?.value, d.ism?.change);
       const spreadLabel = !d.spread?.value ? null
         : isNaN(spreadNum) ? null
         : spreadNum < 0   ? `▼ ${spreadNum.toFixed(2)}% — Inverted`
@@ -1003,6 +1032,19 @@
                       source={d.m2?.source}       updatedAt={d.m2?.updatedAt}
                       stale={!d.m2}              flash={flash.m2}
                       unit={d.m2?.unit}           subtext="BTC lags M2 ~10–12w" />
+                  </div>
+                </div>
+                <div>
+                <div>
+                  <SectionLabel>Economic Activity</SectionLabel>
+                  <div style={grid}>
+                    <MetricCard label="ISM Manufacturing PMI"
+                      value={d.ism?.value}
+                      source={d.ism?.source}      updatedAt={d.ism?.updatedAt}
+                      stale={!d.ism}              flash={flash.ism}
+                      signalColor={ismZoneData.color}
+                      changeLabel={d.ism?.value != null ? ismZoneData.label : null}
+                      subtext={ismZoneData.subtext} />
                   </div>
                 </div>
                 <div>
