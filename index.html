@@ -1197,18 +1197,32 @@
                   <SectionLabel>ETF Flows (Daily)</SectionLabel>
                   <div style={grid}>
                     <MetricCard label="BTC ETF Net Flow"
-                      value={d.btcetf?.value}     source={d.btcetf?.source}
-                      updatedAt={d.btcetf?.updatedAt} stale={!d.btcetf}
-                      flash={flash.btcetf}        subtext="Positive = institutional buy" />
+                      value={d.btcetf?.value}
+                      source={d.btcetf?.source}   updatedAt={d.btcetf?.updatedAt}
+                      stale={!d.btcetf}           flash={flash.btcetf}
+                      signalColor={d.btcetf?.change != null ? (parseFloat(d.btcetf.change) >= 0 ? C.green : C.red) : C.muted}
+                      changeLabel={d.btcetf?.change != null
+                        ? (parseFloat(d.btcetf.change) >= 0 ? `▲ +${parseFloat(d.btcetf.change).toFixed(1)}M today` : `▼ ${parseFloat(d.btcetf.change).toFixed(1)}M today`)
+                        : null}
+                      subtext="5d total · today's flow below" />
                     <MetricCard label="ETH ETF Net Flow"
-                      value={d.ethetf?.value}     source={d.ethetf?.source}
-                      updatedAt={d.ethetf?.updatedAt} stale={!d.ethetf}
-                      flash={flash.ethetf}        subtext="Positive = institutional buy" />
+                      value={d.ethetf?.value}
+                      source={d.ethetf?.source}   updatedAt={d.ethetf?.updatedAt}
+                      stale={!d.ethetf}           flash={flash.ethetf}
+                      signalColor={d.ethetf?.change != null ? (parseFloat(d.ethetf.change) >= 0 ? C.green : C.red) : C.muted}
+                      changeLabel={d.ethetf?.change != null
+                        ? (parseFloat(d.ethetf.change) >= 0 ? `▲ +${parseFloat(d.ethetf.change).toFixed(1)}M today` : `▼ ${parseFloat(d.ethetf.change).toFixed(1)}M today`)
+                        : null}
+                      subtext="5d total · today's flow below" />
                     <MetricCard label="SOL ETF Net Flow"
-                      value={d.soletf?.value}     source={d.soletf?.source}
-                      updatedAt={d.soletf?.updatedAt} stale={!d.soletf}
-                      flash={flash.soletf}        change={d.soletf?.change}
-                      subtext="SOLZ/GSOL proxy · positive = inflow" />
+                      value={d.soletf?.value}
+                      source={d.soletf?.source}   updatedAt={d.soletf?.updatedAt}
+                      stale={!d.soletf}           flash={flash.soletf}
+                      signalColor={d.soletf?.change != null ? (parseFloat(d.soletf.change) >= 0 ? C.green : C.red) : C.muted}
+                      changeLabel={d.soletf?.change != null
+                        ? (parseFloat(d.soletf.change) >= 0 ? `▲ +${parseFloat(d.soletf.change).toFixed(1)}M today` : `▼ ${parseFloat(d.soletf.change).toFixed(1)}M today`)
+                        : null}
+                      subtext="5d total · today's flow below" />
                   </div>
                 </div>
               </div>
