@@ -437,7 +437,7 @@
           <div style={{ display: "flex", gap: 4, flex: 1, minWidth: 120 }}>
             {Array.from({ length: total }).map((_, i) => (
               <div key={i} style={{ flex: 1, height: 5, borderRadius: 3,
-                background: i < bulls ? C.green : i < bulls + bears ? C.red : C.chartBlue + "55" }} />
+                background: i < bulls ? C.green : i < bulls + bears ? C.red : C.chartBlue }} />
             ))}
           </div>
           <span style={{ fontFamily: mono, fontSize: 11, color: C.muted }}>
@@ -864,7 +864,15 @@
       }, [scanning, addLog, flashCards]);
 
       const d = data;
-      const signals = Object.fromEntries(Object.entries(d).map(([k, v]) => [k, v?.signal]));
+      // Signal bar uses macro indicators only — crypto/trading excluded
+      const MACRO_SIGNAL_KEYS = new Set([
+        "dxy","vix","m2","walcl","wti","natgas","y10","y2","fedfunds","cpi","spread","ism"
+      ]);
+      const signals = Object.fromEntries(
+        Object.entries(d)
+          .filter(([k]) => MACRO_SIGNAL_KEYS.has(k))
+          .map(([k, v]) => [k, v?.signal])
+      );
       const grid = { display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(190px,1fr))", gap: 12 };
 
       // ── Yield Curve derived signal ────────────────────────────────────
@@ -1034,7 +1042,6 @@
                       unit={d.m2?.unit}           subtext="BTC lags M2 ~10–12w" />
                   </div>
                 </div>
-                <div>
                 <div>
                   <SectionLabel>Economic Activity</SectionLabel>
                   <div style={grid}>
