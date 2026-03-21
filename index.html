@@ -581,6 +581,133 @@
     // Fetches WALCL (Fed balance sheet) from FRED and BTC price from CoinGecko
     // directly in the browser. WALCL series is shifted forward 10 weeks on the
     // x-axis to visualise the liquidity lead on BTC price.
+    // ── US Session Clock ──────────────────────────────────────────────────
+    // Shows current ET time, session status, and countdown to next key event.
+    // UK offset: GMT (winter) = ET+5h, BST (summer, Mar-Oct) = ET+6h
+    function USSessionClock() {
+      const [now, setNow] = React.useState(new Date());
+      React.useEffect(() => {
+        const t = setInterval(() => setNow(new Date()), 1000);
+        return () => clearInterval(t);
+      }, []);
+
+      // Get ET time (handles DST automatically via toLocaleString)
+      const etStr  = now.toLocaleString("en-US", { timeZone: "America/New_York", hour12: false,
+        hour: "2-digit", minute: "2-digit", second: "2-digit" });
+      const ukStr  = now.toLocaleString("en-GB", { timeZone: "Europe/London", hour12: false,
+        hour: "2-digit", minute: "2-digit", second: "2-digit" });
+      const etParts = etStr.split(":").map(Number);
+      const etMins  = etParts[0] * 60 + etParts[1];
+
+      // Session definitions (ET minutes)
+      const sessions = [
+        { name: "Pre-Market",   start:  4*60,       end:  9*60+30,  color: C.amber  },
+        { name: "NYSE Open",    start:  9*60+30,    end: 16*60,     color: C.green  },
+        { name: "After Hours",  start: 16*60,       end: 20*60,     color: C.amber  },
+        { name: "Market Closed",start: 20*60,       end: 28*60,     color: C.muted  }, // wraps midnight
+      ];
+
+      let current = sessions[3]; // default closed
+      let nextSession = sessions[0];
+      let minsToNext = 0;
+
+      for (let i = 0; i < sessions.length; i++) {
+        const s = sessions[i];
+        if (etMins >= s.start && etMins < s.end) {
+          current = s;
+          const next = sessions[(i + 1) % sessions.length];
+          nextSession = next;
+          minsToNext = s.end - etMins;
+          break;
+        }
+      }
+      if (minsToNext === 0) {
+        // Before pre-market
+        minsToNext = sessions[0].start - etMins;
+        if (minsToNext < 0) minsToNext += 24 * 60;
+      }
+
+      const hh = Math.floor(minsToNext / 60);
+      const mm = minsToNext % 60;
+      const countdown = hh + "h " + String(mm).padStart(2,"0") + "m";
+
+      // NYSE open bar (9:30-16:00 = 390 mins)
+      const sessionPct = current.name === "NYSE Open"
+        ? Math.min(100, ((etMins - 9*60-30) / 390) * 100) : null;
+
+      return (
+        <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: "14px 20px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+            {/* Session status */}
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <div style={{ width: 8, height: 8, borderRadius: "50%", background: current.color,
+                boxShadow: current.name === "NYSE Open" ? `0 0 6px ${current.color}` : "none" }} />
+              <div>
+                <div style={{ fontFamily: sans, fontWeight: 700, fontSize: 14, color: current.color }}>
+                  {current.name}
+                </div>
+                <div style={{ fontFamily: mono, fontSize: 10, color: C.muted, marginTop: 2 }}>
+                  {current.name !== "Market Closed" && current.name !== "NYSE Open"
+                    ? `${nextSession.name} in ${countdown}`
+                    : current.name === "NYSE Open"
+                    ? `Closes in ${countdown}`
+                    : `Pre-market opens in ${countdown}`}
+                </div>
+              </div>
+            </div>
+            {/* Clocks */}
+            <div style={{ display: "flex", gap: 24 }}>
+              <div style={{ textAlign: "center" }}>
+                <div style={{ fontFamily: mono, fontSize: 18, fontWeight: 700, color: C.text, letterSpacing: "0.05em" }}>{etStr}</div>
+                <div style={{ fontFamily: mono, fontSize: 9, color: C.muted, marginTop: 2 }}>NEW YORK (ET)</div>
+              </div>
+              <div style={{ textAlign: "center" }}>
+                <div style={{ fontFamily: mono, fontSize: 18, fontWeight: 700, color: C.chartBlue, letterSpacing: "0.05em" }}>{ukStr}</div>
+                <div style={{ fontFamily: mono, fontSize: 9, color: C.muted, marginTop: 2 }}>LONDON (UK)</div>
+              </div>
+            </div>
+          </div>
+          {/* NYSE session progress bar */}
+          {sessionPct !== null && (
+            <div style={{ marginTop: 10 }}>
+              <div style={{ background: C.border, borderRadius: 3, height: 4 }}>
+                <div style={{ width: `${sessionPct}%`, background: C.green, borderRadius: 3, height: "100%", transition: "width 1s" }} />
+              </div>
+              <div style={{ fontFamily: mono, fontSize: 9, color: C.muted, marginTop: 3 }}>
+                NYSE session progress · 09:30–16:00 ET &nbsp;·&nbsp; 14:30–21:00 UK
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // ── 24h Range Bar ─────────────────────────────────────────────────────
+    function RangeBar({ price, high, low, label }) {
+      if (!price || !high || !low || high <= low) return null;
+      const pct = Math.min(100, Math.max(0, ((price - low) / (high - low)) * 100));
+      const col = pct > 70 ? C.green : pct > 30 ? C.amber : C.red;
+      return (
+        <div>
+          <div style={{ display: "flex", justifyContent: "space-between", fontFamily: mono, fontSize: 10, color: C.muted, marginBottom: 4 }}>
+            <span style={{ color: C.red }}>L ${low.toLocaleString()}</span>
+            <span style={{ color: C.muted }}>{label} 24h Range</span>
+            <span style={{ color: C.green }}>H ${high.toLocaleString()}</span>
+          </div>
+          <div style={{ background: C.border, borderRadius: 4, height: 6, position: "relative" }}>
+            <div style={{ position: "absolute", left: 0, top: 0, width: `${pct}%`, height: "100%",
+              background: `linear-gradient(to right, ${C.red}, ${C.amber}, ${C.green})`,
+              borderRadius: 4 }} />
+            <div style={{ position: "absolute", top: -4, left: `${pct}%`, transform: "translateX(-50%)",
+              width: 3, height: 14, background: C.text, borderRadius: 2, boxShadow: "0 0 4px #000" }} />
+          </div>
+          <div style={{ fontFamily: mono, fontSize: 10, color: col, marginTop: 3, textAlign: "center" }}>
+            ${price.toLocaleString()} · {pct.toFixed(0)}% of range
+          </div>
+        </div>
+      );
+    }
+
     function LiquidityChart() {
       const [chartData, setChartData]   = React.useState(null);
       const [loading, setLoading]       = React.useState(false);
@@ -1293,6 +1420,22 @@
               const mh       = parseFloat(d.sui_mh?.value);
               const ml       = parseFloat(d.sui_ml?.value);
 
+              // BTC trading data
+              const btcPrice = parseFloat(String(d.btc?.value || "").replace(/[^0-9.]/g, ""));
+              const btcHigh  = parseFloat(d.btc_high?.value);
+              const btcLow   = parseFloat(d.btc_low?.value);
+              const btcPP    = parseFloat(d.btc_pp?.value);
+              const btcR1    = parseFloat(d.btc_r1?.value);
+              const btcR2    = parseFloat(d.btc_r2?.value);
+              const btcS1    = parseFloat(d.btc_s1?.value);
+              const btcS2    = parseFloat(d.btc_s2?.value);
+              const btcWH    = parseFloat(d.btc_wh?.value);
+              const btcWL    = parseFloat(d.btc_wl?.value);
+              const btcMH    = parseFloat(d.btc_mh?.value);
+              const btcML    = parseFloat(d.btc_ml?.value);
+              const suiHigh  = parseFloat(d.sui_high?.value);
+              const suiLow   = parseFloat(d.sui_low?.value);
+
               // Price position on range bar
               const rangeMin = isNaN(ml) ? 0 : ml;
               const rangeMax = isNaN(mh) ? 0 : mh;
@@ -1347,6 +1490,73 @@
               return (
                 <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
 
+                  {/* US Session Clock */}
+                  <USSessionClock />
+
+                  {/* ── BTC Section ── */}
+                  <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: "16px 20px" }}>
+                    <SectionLabel>Bitcoin (BTC)</SectionLabel>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(190px,1fr))", gap: 12, marginBottom: 16 }}>
+                      <MetricCard label="BTC / USDT"
+                        value={d.btc?.value}       change={d.btc?.change}
+                        source={d.btc?.source}     updatedAt={d.btc?.updatedAt}
+                        stale={!d.btc}             flash={flash.btc} />
+                      <MetricCard label="BTC Funding Rate"
+                        value={d.funding?.value}
+                        source={d.funding?.source} updatedAt={d.funding?.updatedAt}
+                        stale={!d.funding}
+                        unit="%"
+                        signalColor={fundingZoneData.color}
+                        changeLabel={d.funding?.value != null ? fundingZoneData.label : null}
+                        subtext={fundingZoneData.subtext} />
+                      <MetricCard label="BTC Open Interest"
+                        value={d.oi?.value}
+                        source={d.oi?.source}      updatedAt={d.oi?.updatedAt}
+                        stale={!d.oi}
+                        signalColor={oiZoneData.color}
+                        changeLabel={d.oi?.value != null ? oiZoneData.label : null}
+                        subtext={oiZoneData.subtext} />
+                      <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, padding: "14px 16px" }}>
+                        <div style={{ fontFamily: mono, fontSize: 11, color: C.muted, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.07em" }}>24H Range</div>
+                        <RangeBar price={btcPrice} high={btcHigh} low={btcLow} label="BTC" />
+                      </div>
+                    </div>
+
+                    {/* BTC S/R Levels */}
+                    {!isNaN(btcPP) && (
+                      <div style={{ display: "flex", gap: 32, flexWrap: "wrap" }}>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 240 }}>
+                          {[
+                            ["R2", btcR2, C.green, "2nd resistance"],
+                            ["R1", btcR1, C.chartBlue, "1st resistance"],
+                            ["PP", btcPP, C.amber, "Pivot point"],
+                            ["PRICE", btcPrice, C.text, null],
+                            ["S1", btcS1, C.amber, "1st support"],
+                            ["S2", btcS2, C.red, "2nd support"],
+                          ].map(([lbl, val, col, note]) => !isNaN(val) && (
+                            <div key={lbl} style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                              <span style={{ fontFamily: mono, fontSize: 10, color: col, minWidth: 52, fontWeight: lbl === "PRICE" ? 700 : 400 }}>{lbl}</span>
+                              <span style={{ fontFamily: mono, fontSize: lbl === "PRICE" ? 13 : 12, color: lbl === "PRICE" ? C.text : col, fontWeight: lbl === "PRICE" ? 700 : 400 }}>${val.toLocaleString()}</span>
+                              {note && <span style={{ fontFamily: mono, fontSize: 10, color: C.muted }}>{note}</span>}
+                            </div>
+                          ))}
+                          <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 6, display: "flex", flexDirection: "column", gap: 4, marginTop: 4 }}>
+                            {[["7D High",btcWH,C.green],["7D Low",btcWL,C.red],["30D High",btcMH,C.green],["30D Low",btcML,C.red]].map(([lbl,val,col]) => !isNaN(val) && (
+                              <div key={lbl} style={{ display: "flex", gap: 10 }}>
+                                <span style={{ fontFamily: mono, fontSize: 10, color: col, minWidth: 52 }}>{lbl}</span>
+                                <span style={{ fontFamily: mono, fontSize: 10, color: C.muted }}>${val.toLocaleString()}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* ── SUI Section ── */}
+                  <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: "16px 20px" }}>
+                    <SectionLabel>Sui Network (SUI)</SectionLabel>
+
                   {/* Header metrics row */}
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(190px,1fr))", gap: 12 }}>
                     <MetricCard label="SUI / USDT"
@@ -1368,12 +1578,9 @@
                       signalColor={suiOIZone.color}
                       changeLabel={suiOI?.value != null ? suiOIZone.label : null}
                       subtext={suiOIZone.subtext} />
-                    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: "14px 16px" }}>
-                      <div style={{ fontFamily: mono, fontSize: 11, color: C.muted, marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.07em" }}>24H Range</div>
-                      <div style={{ fontFamily: mono, fontSize: 12, color: C.text, lineHeight: 2 }}>
-                        <div>H: <span style={{ color: C.green }}>${isNaN(parseFloat(d.sui_high?.value)) ? "—" : parseFloat(d.sui_high?.value).toFixed(4)}</span></div>
-                        <div>L: <span style={{ color: C.red }}>${isNaN(parseFloat(d.sui_low?.value)) ? "—" : parseFloat(d.sui_low?.value).toFixed(4)}</span></div>
-                      </div>
+                    <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, padding: "14px 16px" }}>
+                      <div style={{ fontFamily: mono, fontSize: 11, color: C.muted, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.07em" }}>24H Range</div>
+                      <RangeBar price={price} high={suiHigh} low={suiLow} label="SUI" />
                     </div>
                   </div>
 
@@ -1480,6 +1687,7 @@
                       </div>
                     </div>
                   </div>
+                  </div> {/* end SUI section */}
 
                   {/* Liquidation Heatmap — CoinGlass embed */}
                   <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, overflow: "hidden" }}>
