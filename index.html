@@ -28,8 +28,6 @@
 
     const SHEET_ID      = "1hGTwlIhPwi12-vjqaA92umV2oFgjU9aa-ffCoFNUQS8";
     const SHEET_CSV     = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=582118687`;
-    // Catalysts tab — GID is set automatically after first runAll() creates the tab.
-    // Find it: open the Catalysts sheet tab in Google Sheets, look at the URL: ...#gid=XXXXXXX
     const CATALYST_GID  = "325389479";
     const CATALYST_CSV  = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${CATALYST_GID}`;
 
@@ -937,15 +935,15 @@
     }
 
     function App() {
-      const [tab, setTab]               = useState("macro");
-      const [scanning, setScanning]     = useState(false);
-      const [scanLog, setScanLog]       = useState([]);
-      const [lastScan, setLastScan]     = useState(null);
-      const [flash, setFlash]           = useState({});
-      const [data, setData]             = useState({});
-      const [catalysts, setCatalysts]   = useState([]);
-      const [aiSummary, setAiSummary]   = useState(null);
-      const [aiLoading, setAiLoading]   = useState(false);
+      const [tab, setTab]             = useState("macro");
+      const [scanning, setScanning]   = useState(false);
+      const [scanLog, setScanLog]     = useState([]);
+      const [lastScan, setLastScan]   = useState(null);
+      const [flash, setFlash]         = useState({});
+      const [data, setData]           = useState({});
+      const [catalysts, setCatalysts] = useState([]);
+      const [aiSummary, setAiSummary] = useState(null);
+      const [aiLoading, setAiLoading] = useState(false);
 
       const addLog = useCallback((ok, source, note) => {
         setScanLog(prev => [{ ok, source, note, time: now() }, ...prev].slice(0, 50));
@@ -986,30 +984,28 @@
           addLog(false, "SCAN", `Sheet fetch failed — ${e.message}`);
         }
 
-        // Fetch catalysts from second sheet tab
-        if (CATALYST_GID !== "REPLACE_WITH_CATALYSTS_TAB_GID") {
-          try {
-            addLog(true, "NEWS", "Fetching catalyst headlines...");
-            const res2 = await fetch(CATALYST_CSV + `&cachebust=${Date.now()}`);
-            if (!res2.ok) throw new Error(`HTTP ${res2.status}`);
-            const text2 = await res2.text();
-            const rows = text2.trim().split("\n").slice(1).map(line => {
-              const cols = [];
-              let cur = "", inQ = false;
-              for (const ch of line) {
-                if (ch === '"') { inQ = !inQ; }
-                else if (ch === ',' && !inQ) { cols.push(cur.trim()); cur = ""; }
-                else cur += ch;
-              }
-              cols.push(cur.trim());
-              return { title: cols[0], url: cols[1], source: cols[2], pubDate: cols[3], topic: cols[4] };
-            }).filter(r => r.title);
-            setCatalysts(rows);
-            setAiSummary(null); // reset summary when news refreshes
-            addLog(true, "NEWS", `${rows.length} headlines loaded ✓`);
-          } catch(e) {
-            addLog(false, "NEWS", `Catalyst fetch failed — ${e.message}`);
-          }
+        // Fetch catalyst headlines from Catalysts tab
+        try {
+          addLog(true, "NEWS", "Fetching headlines...");
+          const r2 = await fetch(CATALYST_CSV + `&cachebust=${Date.now()}`);
+          if (!r2.ok) throw new Error(`HTTP ${r2.status}`);
+          const t2 = await r2.text();
+          const rows = t2.trim().split("\n").slice(1).map(line => {
+            const cols = [];
+            let cur = "", inQ = false;
+            for (const ch of line) {
+              if (ch === '"') { inQ = !inQ; }
+              else if (ch === ',' && !inQ) { cols.push(cur.trim()); cur = ""; }
+              else cur += ch;
+            }
+            cols.push(cur.trim());
+            return { title: cols[0], url: cols[1], source: cols[2], pubDate: cols[3], topic: cols[4] };
+          }).filter(r => r.title && r.title.length > 5);
+          setCatalysts(rows);
+          setAiSummary(null);
+          addLog(true, "NEWS", `${rows.length} headlines loaded ✓`);
+        } catch(e) {
+          addLog(false, "NEWS", `Headlines fetch failed — ${e.message}`);
         }
 
         setScanning(false);
@@ -1021,49 +1017,52 @@
         setAiSummary(null);
         try {
           const headlines = catalysts.map((c, i) =>
-            `${i+1}. [${c.topic.toUpperCase()}] ${c.title} (${c.source})`
+            `${i+1}. [${(c.topic||"news").toUpperCase()}] ${c.title} (${c.source})`
           ).join("\n");
 
-          const macroContext = [
-            data.y10  ? `10Y yield: ${data.y10.value}` : null,
-            data.y2   ? `2Y yield: ${data.y2.value}` : null,
-            data.dxy  ? `DXY: ${data.dxy.value}` : null,
-            data.vix  ? `VIX: ${data.vix.value}` : null,
-            data.btc  ? `BTC: ${data.btc.value}` : null,
-            data.dom  ? `BTC Dom: ${data.dom.value}` : null,
-            data.fg   ? `Fear & Greed: ${data.fg.value}` : null,
-            data.ism  ? `ISM PMI: ${data.ism.value}` : null,
-            data.cpi  ? `CPI YoY: ${data.cpi.value}` : null,
+          const ctx = [
+            data.y10      ? `10Y: ${data.y10.value}`       : null,
+            data.y2       ? `2Y: ${data.y2.value}`         : null,
+            data.spread   ? `Spread: ${data.spread.value}` : null,
+            data.dxy      ? `DXY: ${data.dxy.value}`       : null,
+            data.vix      ? `VIX: ${data.vix.value}`       : null,
+            data.cpi      ? `CPI: ${data.cpi.value}`       : null,
+            data.ism      ? `ISM: ${data.ism.value}`       : null,
+            data.btc      ? `BTC: ${data.btc.value}`       : null,
+            data.dom      ? `BTC Dom: ${data.dom.value}`   : null,
+            data.fg       ? `Fear/Greed: ${data.fg.value}` : null,
+            data.funding  ? `Funding: ${data.funding.value}`: null,
           ].filter(Boolean).join(" · ");
 
-          const prompt = `You are a macro and crypto markets analyst. Current indicators: ${macroContext}
+          const prompt = `You are a macro and crypto markets analyst. Current live indicators: ${ctx}
 
 Today's top headlines:
 ${headlines}
 
-Give a concise 4-6 bullet analyst briefing covering:
-- The dominant macro theme and what it means for risk assets
-- Any direct Bitcoin/crypto implications
-- 1-2 key levels or catalysts to watch
-- Overall regime signal (risk-on / risk-off / mixed)
+Write a concise 5-bullet analyst briefing:
+• Dominant macro theme and what it means for risk assets
+• Direct Bitcoin/crypto implication from the news
+• Key level or data point to watch this week
+• Regime signal: risk-on / risk-off / mixed — and why
+• One actionable takeaway for a BTC/ETH/SUI portfolio
 
-Be specific, use the actual data points and headline context. No fluff. Each bullet max 2 sentences.`;
+Be specific. Reference actual numbers from the indicators and headlines. No generic statements. Max 2 sentences per bullet.`;
 
           const response = await fetch("https://api.anthropic.com/v1/messages", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               model: "claude-sonnet-4-20250514",
-              max_tokens: 1000,
-              tools: [{ type: "web_search_20250305", name: "web_search" }],
+              max_tokens: 800,
               messages: [{ role: "user", content: prompt }]
             })
           });
           const d2 = await response.json();
-          const text = (d2.content || []).filter(b => b.type === "text").map(b => b.text).join("\n");
-          setAiSummary(text || "No summary returned.");
+          if (d2.error) throw new Error(d2.error.message);
+          const txt = (d2.content || []).filter(b => b.type === "text").map(b => b.text).join("\n").trim();
+          setAiSummary(txt || "No summary returned.");
         } catch(e) {
-          setAiSummary("⚠ AI interpret failed: " + e.message);
+          setAiSummary("⚠ Interpret failed: " + e.message + "\n\nNote: The ✦ INTERPRET button calls the Anthropic API directly from your browser. This requires the API to accept requests without an API key header — which only works inside Claude.ai Artifacts. For local use, see the server-side AI summary option (generateAISummary in Apps Script).");
         }
         setAiLoading(false);
       }, [aiLoading, catalysts, data]);
@@ -1826,13 +1825,13 @@ Be specific, use the actual data points and headline context. No fluff. Each bul
             {tab === "catalysts" && (
               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
 
-                {/* AI Interpret section */}
+                {/* AI Briefing panel */}
                 <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: "16px 20px" }}>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: aiSummary ? 14 : 0 }}>
                     <div>
                       <span style={{ fontFamily: sans, fontWeight: 600, fontSize: 13, color: C.text }}>AI Market Briefing</span>
                       <span style={{ fontFamily: mono, fontSize: 10, color: C.muted, marginLeft: 10 }}>
-                        Powered by Claude · uses live headlines + your indicators
+                        Claude · live headlines + your indicators
                       </span>
                     </div>
                     <button onClick={interpretCatalysts} disabled={aiLoading || catalysts.length === 0}
@@ -1846,15 +1845,14 @@ Be specific, use the actual data points and headline context. No fluff. Each bul
                     </button>
                   </div>
                   {aiSummary && (
-                    <div style={{ fontFamily: mono, fontSize: 12, color: C.text, lineHeight: 1.8,
-                      borderTop: `1px solid ${C.border}`, paddingTop: 14, marginTop: 2,
-                      whiteSpace: "pre-wrap" }}>
+                    <div style={{ fontFamily: mono, fontSize: 12, color: C.text, lineHeight: 1.9,
+                      borderTop: `1px solid ${C.border}`, paddingTop: 14, whiteSpace: "pre-wrap" }}>
                       {aiSummary}
                     </div>
                   )}
-                  {catalysts.length === 0 && (
-                    <div style={{ fontFamily: mono, fontSize: 11, color: C.amber, marginTop: 8 }}>
-                      ⚠ No headlines loaded — run ⚡ LIVE SCAN after setting CATALYST_GID in index.html
+                  {catalysts.length === 0 && !aiSummary && (
+                    <div style={{ fontFamily: mono, fontSize: 11, color: C.amber, marginTop: 10 }}>
+                      ⚠ No headlines — hit ⚡ LIVE SCAN to load
                     </div>
                   )}
                 </div>
@@ -1862,37 +1860,26 @@ Be specific, use the actual data points and headline context. No fluff. Each bul
                 {/* Live headlines */}
                 {catalysts.length > 0 && (
                   <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    <SectionLabel>Live Headlines · {catalysts.length} items · Auto-updated by Apps Script</SectionLabel>
+                    <SectionLabel>Live Headlines · {catalysts.length} items · updated by Apps Script daily</SectionLabel>
                     {catalysts.map((c, i) => {
-                      const topicColors = { macro: C.blue, crypto: C.amber, risk: C.red };
-                      const topicColor  = topicColors[c.topic] || C.muted;
-                      // Format pubDate nicely
+                      const topicCol = { macro: C.blue, crypto: C.amber, risk: C.red }[c.topic] || C.muted;
                       let dateStr = c.pubDate;
-                      try { dateStr = new Date(c.pubDate).toLocaleString("en-GB", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }); }
-                      catch {}
+                      try { dateStr = new Date(c.pubDate).toLocaleString("en-GB", { month:"short", day:"numeric", hour:"2-digit", minute:"2-digit" }); } catch{}
                       return (
-                        <a key={i} href={c.url} target="_blank" rel="noopener noreferrer"
-                          style={{ textDecoration: "none" }}>
+                        <a key={i} href={c.url} target="_blank" rel="noopener noreferrer" style={{ textDecoration: "none" }}>
                           <div
                             onMouseEnter={e => e.currentTarget.style.background = C.hover}
                             onMouseLeave={e => e.currentTarget.style.background = C.surface}
                             style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8,
-                              padding: "12px 18px", display: "flex", alignItems: "flex-start", gap: 14,
+                              padding: "11px 16px", display: "flex", alignItems: "flex-start", gap: 12,
                               transition: "background 0.15s", cursor: "pointer" }}>
-                            <span style={{ fontFamily: mono, fontSize: 10, color: topicColor,
-                              background: topicColor + "22", border: `1px solid ${topicColor}44`,
+                            <span style={{ fontFamily: mono, fontSize: 10, color: topicCol,
+                              background: topicCol+"22", border:`1px solid ${topicCol}44`,
                               borderRadius: 3, padding: "2px 7px", textTransform: "uppercase",
-                              letterSpacing: "0.06em", marginTop: 1, flexShrink: 0, whiteSpace: "nowrap" }}>
-                              {c.topic}
-                            </span>
+                              letterSpacing: "0.06em", flexShrink: 0, marginTop: 2 }}>{c.topic}</span>
                             <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{ fontFamily: sans, fontSize: 13, color: C.text,
-                                fontWeight: 500, lineHeight: 1.5, marginBottom: 3 }}>
-                                {c.title}
-                              </div>
-                              <div style={{ fontFamily: mono, fontSize: 10, color: C.muted }}>
-                                {c.source} · {dateStr}
-                              </div>
+                              <div style={{ fontFamily: sans, fontSize: 13, color: C.text, fontWeight: 500, lineHeight: 1.5, marginBottom: 2 }}>{c.title}</div>
+                              <div style={{ fontFamily: mono, fontSize: 10, color: C.muted }}>{c.source} · {dateStr}</div>
                             </div>
                             <span style={{ fontFamily: mono, fontSize: 11, color: C.muted, flexShrink: 0, paddingTop: 2 }}>↗</span>
                           </div>
@@ -1902,13 +1889,13 @@ Be specific, use the actual data points and headline context. No fluff. Each bul
                   </div>
                 )}
 
-                {/* Static scheduled events — always shown below live feed */}
+                {/* Static forward-looking events */}
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                   <SectionLabel>Scheduled Events & Macro Triggers</SectionLabel>
                   {[
-                    { date: "2026-Q2",  event: "Clarity Act — Senate Markup",     impact: "bull",  note: "Stablecoin yield dispute unresolved. Passage = major bullish catalyst",  confidence: "Medium" },
-                    { date: "2026-Q2",  event: "Debt Ceiling Resolution",         impact: "watch", note: "TGA drawdown = short-term liquidity injection",                           confidence: "Medium" },
-                    { date: "2026-H1",  event: "Fed Balance Sheet Pivot (QT→QE)", impact: "bull",  note: "Biggest macro trigger. Watch WALCL weekly",                               confidence: "Low"    },
+                    { date: "2026-Q2", event: "Clarity Act — Senate Markup",     impact: "bull",  note: "Stablecoin yield dispute unresolved. Passage = major bullish catalyst", confidence: "Medium" },
+                    { date: "2026-Q2", event: "Debt Ceiling Resolution",          impact: "watch", note: "TGA drawdown = short-term liquidity injection",                          confidence: "Medium" },
+                    { date: "2026-H1", event: "Fed Balance Sheet Pivot (QT→QE)", impact: "bull",  note: "Biggest macro trigger. Watch WALCL weekly",                              confidence: "Low"    },
                   ].map((c, i) => (
                     <div key={i}
                       onMouseEnter={e => e.currentTarget.style.background = C.hover}
