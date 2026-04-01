@@ -24,13 +24,15 @@
   <div id="root"></div>
 
   <script type="text/babel">
-    const { useState, useCallback } = React;
+    const { useState, useCallback, useRef, useEffect } = React;
 
-    const SHEET_ID      = "1hGTwlIhPwi12-vjqaA92umV2oFgjU9aa-ffCoFNUQS8";
-    const SHEET_CSV     = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=582118687`;
-    const CATALYST_GID  = "325389479";
-    const CATALYST_CSV  = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${CATALYST_GID}`;
+    // ── Sheet config ──────────────────────────────────────────────────────
+    const SHEET_ID     = "1hGTwlIhPwi12-vjqaA92umV2oFgjU9aa-ffCoFNUQS8";
+    const SHEET_CSV    = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=582118687`;
+    const CATALYST_GID = "325389479";
+    const CATALYST_CSV = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${CATALYST_GID}`;
 
+    // ── Design tokens ─────────────────────────────────────────────────────
     const C = {
       bg: "#0d1117", surface: "#161b22", border: "#30363d",
       text: "#e6edf3", muted: "#8b949e", blue: "#58a6ff",
@@ -41,6 +43,7 @@
     const mono = "'JetBrains Mono', monospace";
     const sans = "'Inter', system-ui, sans-serif";
 
+    // ── CSV parser ────────────────────────────────────────────────────────
     function parseCSV(text) {
       const lines = text.trim().split("\n").slice(1);
       const out = {};
@@ -78,147 +81,133 @@
       return new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
     }
 
+    // ── Signal functions ──────────────────────────────────────────────────
     const SIGNAL_FN = {
-      dxy:      p => p.change < 0 ? "bull" : "bear",
-      vix:      p => {
-        const v = parseFloat(p.value);
-        if (isNaN(v))  return "neutral";
-        if (v >= 40)   return "bear";   // extreme panic
-        if (v >= 30)   return "bear";   // high fear
-        if (v >= 20)   return "neutral";// elevated
-        return "bull";                  // calm market
-      },
-      m2:       p => p.change > 0 ? "bull" : "bear",
-      walcl:    p => p.change > 0 ? "bull" : "bear",
-      wti:      p => p.change > 0 ? "bear" : "bull",
-      natgas:   p => p.change > 0 ? "bear" : "bull",
-      ethbtc:   p => parseFloat(p.value) >= 0.040 ? "bull" : "neutral",
-      dom:      p => p.change < 0 ? "bull" : "neutral",
-      btcetf:   p => parseFloat(p.value) > 0 ? "bull" : "bear",
-      ethetf:   p => parseFloat(p.value) > 0 ? "bull" : "bear",
-      funding:  p => {
-        const v = parseFloat(p.value);
-        if (isNaN(v))    return "neutral";
-        if (v > 0.05)    return "bear";    // overheated longs — correction risk
-        if (v > 0.01)    return "bull";    // healthy longs — bullish
-        if (v > -0.01)   return "neutral"; // balanced
-        if (v > -0.05)   return "bear";    // shorts dominant — bearish
-        return "bull";                     // overheated shorts — short squeeze potential
-      },
-      btc:      p => p.change > 0 ? "bull" : "bear",
-      eth:      p => p.change > 0 ? "bull" : "bear",
-      fg:       p => parseFloat(p.value) < 20 ? "bull" : parseFloat(p.value) > 75 ? "bear" : "neutral",
-      y10:      p => p.change > 0 ? "bear" : "bull",
-      y2:       p => p.change > 0 ? "bear" : "bull",
-      fedfunds: p => p.change > 0 ? "bear" : "bull",
-      tga:      p => p.change < 0 ? "bull" : "neutral",   // loaded for netliq calc
-      rrp:      p => p.change > 0 ? "bull" : "bear",      // loaded for netliq calc
-      cpi:      p => p.change < 0 ? "bull" : p.change > 0 ? "bear" : "neutral",
-      spread:   p => parseFloat(p.value) < 0 ? "bear" : "neutral",
-      ism:      p => {
-        const v = parseFloat(p.value);
-        if (isNaN(v)) return "neutral";
-        if (v >= 55)  return "bull";
-        if (v >= 50)  return "bull";
-        if (v >= 45)  return "bear";
-        return "bear";
-      },
-      oi:       p => {
-        // Signal resolved in oiZone() using price context — use change as proxy here
-        const chg = p.change;
-        if (chg == null || isNaN(chg)) return "neutral";
-        if (chg > 0)  return "bull";
-        return "bear";
-      },
-      stabvol:  p => {
-        const chg = p.change;
-        if (chg == null || isNaN(chg)) return "neutral";
-        if (chg > 20)  return "neutral"; // extreme spike — ambiguous, use amber via zone
-        if (chg > 5)   return "bull";    // active participation, dry powder building
-        if (chg > -5)  return "neutral"; // routine variance
-        return "bear";                   // declining activity, low participation
-      },
-      soletf:   p => parseFloat(p.value) > 0 ? "bull" : "bear",
-      sui:      p => p.change > 0 ? "bull" : "bear",
-      sui_funding: p => {
-        const v = parseFloat(p.value);
-        if (isNaN(v))    return "neutral";
-        if (v > 0.05)    return "bear";
-        if (v > 0.01)    return "bull";
-        if (v > -0.01)   return "neutral";
-        if (v > -0.05)   return "bear";
-        return "bull";
-      },
-      sui_oi: p => {
-        const chg = p.change;
-        if (chg == null || isNaN(chg)) return "neutral";
-        if (chg > 5)  return "bull";
-        if (chg > -1) return "neutral";
-        return "bear";
-      },
+      dxy:         p => p.change < 0 ? "bull" : "bear",
+      vix:         p => { const v = parseFloat(p.value); if (isNaN(v)) return "neutral"; if (v >= 30) return "bear"; if (v >= 20) return "neutral"; return "bull"; },
+      m2:          p => p.change > 0 ? "bull" : "bear",
+      walcl:       p => p.change > 0 ? "bull" : "bear",
+      wti:         p => p.change > 0 ? "bear" : "bull",
+      natgas:      p => p.change > 0 ? "bear" : "bull",
+      ethbtc:      p => parseFloat(p.value) >= 0.040 ? "bull" : "neutral",
+      dom:         p => p.change < 0 ? "bull" : "neutral",
+      btcetf:      p => parseFloat(p.value) > 0 ? "bull" : "bear",
+      ethetf:      p => parseFloat(p.value) > 0 ? "bull" : "bear",
+      funding:     p => { const v = parseFloat(p.value); if (isNaN(v)) return "neutral"; if (v > 0.05) return "bear"; if (v > 0.01) return "bull"; if (v > -0.01) return "neutral"; if (v > -0.05) return "bear"; return "bull"; },
+      btc:         p => p.change > 0 ? "bull" : "bear",
+      eth:         p => p.change > 0 ? "bull" : "bear",
+      fg:          p => parseFloat(p.value) < 20 ? "bull" : parseFloat(p.value) > 75 ? "bear" : "neutral",
+      y10:         p => p.change > 0 ? "bear" : "bull",
+      y2:          p => p.change > 0 ? "bear" : "bull",
+      fedfunds:    p => p.change > 0 ? "bear" : "bull",
+      tga:         p => p.change < 0 ? "bull" : "neutral",
+      rrp:         p => p.change > 0 ? "bull" : "bear",
+      cpi:         p => p.change < 0 ? "bull" : p.change > 0 ? "bear" : "neutral",
+      spread:      p => parseFloat(p.value) < 0 ? "bear" : "neutral",
+      ism:         p => { const v = parseFloat(p.value); if (isNaN(v)) return "neutral"; return v >= 50 ? "bull" : "bear"; },
+      oi:          p => { const c = p.change; if (c == null || isNaN(c)) return "neutral"; return c > 0 ? "bull" : "bear"; },
+      stabvol:     p => { const c = p.change; if (c == null || isNaN(c)) return "neutral"; return c > 5 ? "bull" : c < -5 ? "bear" : "neutral"; },
+      soletf:      p => parseFloat(p.value) > 0 ? "bull" : "bear",
+      sui:         p => p.change > 0 ? "bull" : "bear",
+      sui_funding: p => { const v = parseFloat(p.value); if (isNaN(v)) return "neutral"; if (v > 0.05) return "bear"; if (v > 0.01) return "bull"; if (v > -0.01) return "neutral"; return "bear"; },
+      sui_oi:      p => { const c = p.change; if (c == null || isNaN(c)) return "neutral"; return c > 5 ? "bull" : c > -1 ? "neutral" : "bear"; },
     };
 
-    const TIPS = [
-      { label: "ETH/BTC Rotation",  body: "Trigger at 0.040. Current ~0.024 — not triggered. Wait for ratio + BTC dominance falling." },
-      { label: "Fear & Greed < 20", body: "Accumulation zone. Scale in BTC. Historical recoveries within 4–8 weeks." },
-      { label: "Fear & Greed > 75", body: "Start trimming. Move 20–30% to stablecoins. Don't sell all — momentum can persist." },
-      { label: "4+ Macro Red",      body: "Move majority to stablecoins. Re-enter when RRP rising + DXY falling + M2 expanding." },
-      { label: "RRP Near Zero",     body: "Liquidity tank empty. Next leg up needs M2 expansion + Fed pivot. Watch WALCL weekly." },
-      { label: "Global M2 Lag",     body: "BTC historically lags global M2 expansion by 10–12 weeks. M2 is a leading indicator." },
-      { label: "TGA Drawdown",      body: "Treasury spending down TGA = liquidity flowing into banking system = mild bullish." },
-      { label: "Crude Oil Spike",   body: "Energy spikes = inflation pressure = Fed stays hawkish = risk-off. Watch if WTI >$90." },
-    ];
-
-    // ── BTC Dominance zone logic ──────────────────────────────────────────
-    // >60%      : BTC accumulation phase — alts underperform
-    // 55%–60%   : Rotation starting — capital beginning to leave BTC
-    // 50%–55%   : Altcoin season approaching
-    // 40%–50%   : Confirmed altseason — optimal alt performance zone
-    // <40%      : Euphoria / warning — market top risk
+    // ── Zone helpers ──────────────────────────────────────────────────────
     function domZone(value) {
       const v = parseFloat(value);
       if (isNaN(v)) return { color: C.muted, label: "—", subtext: "↓ Falling = alt season" };
-      if (v >= 60)  return { color: C.blue,     label: `► ${v.toFixed(2)}% — BTC Phase`,         subtext: "BTC dominant — hold BTC, avoid alts" };
-      if (v >= 55)  return { color: C.amber,    label: `▼ ${v.toFixed(2)}% — Rotation Starting`, subtext: "Capital rotating → ETH/SOL/SUI" };
-      if (v >= 50)  return { color: C.chartBlue,label: `▼ ${v.toFixed(2)}% — Alt Season Near`,   subtext: "Approaching confirmed altseason" };
-      if (v >= 40)  return { color: C.green,    label: `▼ ${v.toFixed(2)}% — Alt Season ✓`,      subtext: "Optimal zone — broad alt rally" };
-      return              { color: C.red,       label: `▼ ${v.toFixed(2)}% — Euphoria Zone`,      subtext: "⚠ Below 40% — market top risk" };
+      if (v >= 60)  return { color: C.blue,      label: `► ${v.toFixed(2)}% — BTC Phase`,         subtext: "BTC dominant — hold BTC, avoid alts" };
+      if (v >= 55)  return { color: C.amber,     label: `▼ ${v.toFixed(2)}% — Rotation Starting`, subtext: "Capital rotating → ETH/SOL/SUI" };
+      if (v >= 50)  return { color: C.chartBlue, label: `▼ ${v.toFixed(2)}% — Alt Season Near`,   subtext: "Approaching confirmed altseason" };
+      if (v >= 40)  return { color: C.green,     label: `▼ ${v.toFixed(2)}% — Alt Season ✓`,      subtext: "Optimal zone — broad alt rally" };
+      return               { color: C.red,       label: `▼ ${v.toFixed(2)}% — Euphoria Zone`,     subtext: "⚠ Below 40% — market top risk" };
+    }
+    function vixZone(value) {
+      const v = parseFloat(value);
+      if (isNaN(v) || !value) return { color: C.muted, label: null, subtext: "S&P 500 30-day implied vol" };
+      if (v >= 40) return { color: C.red,    label: `▲ ${v.toFixed(2)} — Extreme Panic`, subtext: "⚠ Capitulation territory · watch for reversal" };
+      if (v >= 30) return { color: C.red,    label: `▲ ${v.toFixed(2)} — High Fear`,     subtext: "Risk-off · equity stress elevated" };
+      if (v >= 20) return { color: C.amber,  label: `► ${v.toFixed(2)} — Elevated`,      subtext: "Caution · uncertainty building" };
+      return              { color: C.green,  label: `▼ ${v.toFixed(2)} — Calm`,          subtext: "Low volatility · risk-on conditions" };
+    }
+    function fundingZone(value) {
+      const v = parseFloat(value);
+      if (isNaN(v) || value == null) return { color: C.muted, label: null, subtext: "Funding rate signal" };
+      if (v > 0.05)  return { color: C.red,       label: `▲ ${v.toFixed(4)}% — Overheated Longs`,  subtext: "⚠ Long squeeze risk — crowded trade" };
+      if (v > 0.01)  return { color: C.green,     label: `▲ ${v.toFixed(4)}% — Bullish`,           subtext: "Longs paying · healthy long bias" };
+      if (v > -0.01) return { color: C.chartBlue, label: `► ${v.toFixed(4)}% — Neutral`,           subtext: "Balanced market · low squeeze risk" };
+      if (v > -0.05) return { color: C.red,       label: `▼ ${v.toFixed(4)}% — Bearish`,           subtext: "Shorts dominant · bearish sentiment" };
+      return               { color: C.amber,      label: `▼ ${v.toFixed(4)}% — Overheated Shorts`, subtext: "⚠ Short squeeze potential — extreme fear" };
+    }
+    function oiZone(oiValue, oiChg, priceChg) {
+      if (oiChg == null || isNaN(parseFloat(oiChg)) || !oiValue) return { color: C.muted, label: null, subtext: "Price × OI = combined signal" };
+      const oi = parseFloat(oiChg), pr = parseFloat(priceChg);
+      const oiUp = oi >= 0, prUp = !isNaN(pr) && pr >= 0;
+      if (isNaN(pr)) return oiUp ? { color: C.chartBlue, label: `▲ OI +${oi.toFixed(1)}% — Building`, subtext: "OI rising · await price direction" } : { color: C.amber, label: `▼ OI ${oi.toFixed(1)}% — Declining`, subtext: "OI falling · positions closing" };
+      if (prUp && oiUp)   return { color: C.green,     label: `▲ Price +${pr.toFixed(1)}% · OI +${oi.toFixed(1)}% — BULLISH`,  subtext: "New longs entering · uptrend strengthening" };
+      if (!prUp && oiUp)  return { color: C.red,       label: `▼ Price ${pr.toFixed(1)}% · OI +${oi.toFixed(1)}% — BEARISH`,   subtext: "New shorts entering · downtrend strengthening" };
+      if (prUp && !oiUp)  return { color: C.amber,     label: `▲ Price +${pr.toFixed(1)}% · OI ${oi.toFixed(1)}% — WEAKENING`, subtext: "Shorts covering / profit-taking · trend losing conviction" };
+      return { color: C.chartBlue, label: `▼ Price ${pr.toFixed(1)}% · OI ${oi.toFixed(1)}% — BOTTOMING?`, subtext: "Panic selling or shorts covering · watch for reversal" };
+    }
+    function stabvolZone(value, change) {
+      if (change == null || isNaN(change) || !value) return { color: C.muted, label: null, subtext: "24h USDT volume · activity signal" };
+      const c = parseFloat(change);
+      if (c > 20)  return { color: C.amber,     label: `▲ +${c.toFixed(1)}% — Extreme Spike`, subtext: "⚠ Major capital in motion · check other signals" };
+      if (c > 5)   return { color: C.green,     label: `▲ +${c.toFixed(1)}% — Active`,        subtext: "Participation rising · dry powder building" };
+      if (c > -5)  return { color: C.chartBlue, label: `► ${c.toFixed(1)}% — Normal`,         subtext: "Routine activity · no strong signal" };
+      return              { color: C.red,       label: `▼ ${c.toFixed(1)}% — Declining`,      subtext: "Low participation · complacency or fully deployed" };
+    }
+    function ismZone(value, change) {
+      const v = parseFloat(value), chg = parseFloat(change);
+      if (isNaN(v) || !value) return { color: C.muted, label: null, subtext: "ISM Manufacturing PMI · >50 = expansion" };
+      const trend = !isNaN(chg) ? (chg > 0 ? ` ▲ +${chg.toFixed(1)}` : chg < 0 ? ` ▼ ${chg.toFixed(1)}` : "") : "";
+      if (v >= 55) return { color: C.green,     label: `${v.toFixed(1)}${trend} — Strong Expansion`, subtext: "Manufacturing expanding rapidly · bullish" };
+      if (v >= 50) return { color: C.chartBlue, label: `${v.toFixed(1)}${trend} — Expanding`,        subtext: "Above 50 · growth cycle intact" };
+      if (v >= 45) return { color: C.amber,     label: `${v.toFixed(1)}${trend} — Contracting`,      subtext: "Below 50 · watch for deterioration" };
+      return              { color: C.red,       label: `${v.toFixed(1)}${trend} — Deep Contraction`, subtext: "⚠ Below 45 · recession signal" };
+    }
+    function netliqZone(value, change) {
+      if (!value || change == null || isNaN(change)) return { color: C.muted, label: null, subtext: "WALCL − TGA − RRP" };
+      const c = parseFloat(change);
+      if (c > 1)  return { color: C.green,     label: `▲ +${c.toFixed(1)}% — Expanding`,   subtext: "Liquidity rising · bullish for risk assets" };
+      if (c > 0)  return { color: C.chartBlue, label: `▲ +${c.toFixed(2)}% — Slight Rise`,  subtext: "Mild liquidity expansion" };
+      if (c === 0) return { color: C.chartBlue, label: `► Unchanged`,                        subtext: "Flat liquidity · no strong signal" };
+      if (c > -1) return { color: C.amber,     label: `▼ ${c.toFixed(2)}% — Slight Drain`,  subtext: "Mild liquidity contraction · watch closely" };
+      return             { color: C.red,       label: `▼ ${c.toFixed(1)}% — Contracting`,   subtext: "⚠ Liquidity draining · bearish for risk assets" };
+    }
+    function spreadSignalColor(value) {
+      if (!value) return C.muted;
+      const v = parseFloat(value);
+      if (isNaN(v)) return C.muted;
+      if (v < 0) return C.red;
+      if (v < 0.5) return C.amber;
+      return C.chartBlue;
+    }
+    function fedfundsSignalColor(change) {
+      if (change == null) return C.muted;
+      if (change > 0) return C.red;
+      if (change < 0) return C.green;
+      return C.chartBlue;
     }
 
+    // ── Shared UI components ──────────────────────────────────────────────
     function Tag({ label }) {
       const colors = { bull: C.green, bear: C.red, watch: C.amber, neutral: C.muted };
       const col = colors[label] || C.muted;
-      return (
-        <span style={{ fontSize: 10, fontFamily: mono, color: col,
-          background: col + "22", border: `1px solid ${col}44`,
-          borderRadius: 3, padding: "1px 6px", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-          {label}
-        </span>
-      );
+      return <span style={{ fontSize: 10, fontFamily: mono, color: col, background: col + "22", border: `1px solid ${col}44`, borderRadius: 3, padding: "1px 6px", textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</span>;
     }
 
-    // signalColor  — overrides change-row color (for value-derived signals)
-    // changeLabel  — replaces the auto "▲ x.xx% 24h" text with a custom string
-    function MetricCard({ label, value, change, unit="", source, updatedAt, stale,
-                          flash, invertSignal, subtext, signalColor, changeLabel }) {
+    function MetricCard({ label, value, change, unit="", source, updatedAt, stale, flash, invertSignal, subtext, signalColor, changeLabel }) {
       const [hov, setHov] = useState(false);
       const isPos = change > 0, isNeg = change < 0;
-
-      let changeColor = invertSignal
-        ? (isPos ? C.red : isNeg ? C.green : C.muted)
-        : (isPos ? C.green : isNeg ? C.red : C.muted);
+      let changeColor = invertSignal ? (isPos ? C.red : isNeg ? C.green : C.muted) : (isPos ? C.green : isNeg ? C.red : C.muted);
       if (signalColor) changeColor = signalColor;
-
       const hasChangeRow = change != null || changeLabel != null;
-
       return (
         <div onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
-          style={{ background: C.surface, border: `1px solid ${flash ? C.blue : C.border}`,
-            borderRadius: 8, padding: "14px 16px", transition: "all 0.2s",
-            transform: hov ? "scale(1.02)" : "scale(1)",
-            boxShadow: flash ? `0 0 0 2px ${C.blue}44` : "none", minWidth: 0 }}>
-          <div style={{ fontSize: 11, fontFamily: mono, color: C.muted, marginBottom: 6,
-            display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          style={{ background: C.surface, border: `1px solid ${flash ? C.blue : C.border}`, borderRadius: 8, padding: "14px 16px", transition: "all 0.2s", transform: hov ? "scale(1.02)" : "scale(1)", boxShadow: flash ? `0 0 0 2px ${C.blue}44` : "none", minWidth: 0 }}>
+          <div style={{ fontSize: 11, fontFamily: mono, color: C.muted, marginBottom: 6, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <span style={{ textTransform: "uppercase", letterSpacing: "0.07em" }}>{label}</span>
             {stale && <span style={{ color: C.amber, fontSize: 10 }}>⚠ STALE</span>}
           </div>
@@ -228,16 +217,11 @@
             </span>
             {unit && <span style={{ fontSize: 13, fontFamily: mono, color: C.muted }}>{unit}</span>}
           </div>
-
           {hasChangeRow && (
             <div style={{ fontSize: 12, fontFamily: mono, color: changeColor }}>
-              {changeLabel != null
-                ? changeLabel
-                : <>{isPos ? "▲" : isNeg ? "▼" : "—"} {Math.abs(change).toFixed(2)}%<span style={{ color: C.muted, marginLeft: 6, fontSize: 10 }}>24h</span></>
-              }
+              {changeLabel != null ? changeLabel : <>{isPos ? "▲" : isNeg ? "▼" : "—"} {Math.abs(change).toFixed(2)}%<span style={{ color: C.muted, marginLeft: 6, fontSize: 10 }}>24h</span></>}
             </div>
           )}
-
           {subtext && <div style={{ fontSize: 11, fontFamily: mono, color: C.muted, marginTop: 4 }}>{subtext}</div>}
           <div style={{ marginTop: 10, fontSize: 10, fontFamily: mono, display: "flex", justifyContent: "space-between" }}>
             <span style={{ color: C.muted + "99" }}>{source || "—"}</span>
@@ -247,170 +231,8 @@
       );
     }
 
-    // ── Yield Curve signal color ──────────────────────────────────────────
-    function spreadSignalColor(value) {
-      if (!value) return C.muted;
-      const v = parseFloat(value);
-      if (isNaN(v)) return C.muted;
-      if (v < 0)    return C.red;
-      if (v < 0.5)  return C.amber;
-      return C.chartBlue;
-    }
-
-    // ── Fed Funds signal color ────────────────────────────────────────────
-    function fedfundsSignalColor(change) {
-      if (change == null) return C.muted;
-      if (change > 0)     return C.red;
-      if (change < 0)     return C.green;
-      return C.chartBlue;
-    }
-
-    // ── VIX 4-zone signal ─────────────────────────────────────────────────
-    // <20  = Low volatility — calm, risk-on conditions
-    // 20-30 = Elevated — caution, uncertainty building
-    // 30-40 = High fear — stress, risk-off likely
-    // 40+  = Extreme panic — capitulation territory, potential reversal
-    function vixZone(value) {
-      const v = parseFloat(value);
-      if (isNaN(v) || !value) return { color: C.muted, label: null, subtext: "S&P 500 30-day implied vol" };
-      if (v >= 40) return { color: C.red,       label: `▲ ${v.toFixed(2)} — Extreme Panic`,  subtext: "⚠ Capitulation territory · watch for reversal" };
-      if (v >= 30) return { color: C.red,       label: `▲ ${v.toFixed(2)} — High Fear`,      subtext: "Risk-off · equity stress elevated"              };
-      if (v >= 20) return { color: C.amber,     label: `► ${v.toFixed(2)} — Elevated`,       subtext: "Caution · uncertainty building"                 };
-      return            { color: C.green,      label: `▼ ${v.toFixed(2)} — Calm`,           subtext: "Low volatility · risk-on conditions"            };
-    }
-    // Zones (% per 8h):
-    //  > +0.05%  Overheated Bull  — red    (crowded longs, long squeeze risk)
-    //  +0.01 to +0.05  Bullish    — green  (healthy long bias)
-    //  -0.01 to +0.01  Neutral    — blue   (balanced, low immediate risk)
-    //  -0.05 to -0.01  Bearish    — red    (short bias dominant)
-    //  < -0.05%  Overheated Bear  — amber  (extreme shorts, short squeeze potential)
-    function fundingZone(value) {
-      const v = parseFloat(value);
-      if (isNaN(v) || value == null) return { color: C.muted, label: null, subtext: "Funding rate signal" };
-      if (v > 0.05)  return { color: C.red,       label: `▲ ${v.toFixed(4)}% — Overheated Longs`,  subtext: "⚠ Long squeeze risk — crowded trade"       };
-      if (v > 0.01)  return { color: C.green,      label: `▲ ${v.toFixed(4)}% — Bullish`,           subtext: "Longs paying · healthy long bias"           };
-      if (v > -0.01) return { color: C.chartBlue,  label: `► ${v.toFixed(4)}% — Neutral`,           subtext: "Balanced market · low squeeze risk"         };
-      if (v > -0.05) return { color: C.red,        label: `▼ ${v.toFixed(4)}% — Bearish`,           subtext: "Shorts dominant · bearish sentiment"        };
-      return              { color: C.amber,       label: `▼ ${v.toFixed(4)}% — Overheated Shorts`, subtext: "⚠ Short squeeze potential — extreme fear"   };
-    }
-
-    // ── Open Interest 5-zone signal ───────────────────────────────────────
-    // Signal is driven by the % change in OI (new capital in vs positions closing).
-    // Rising OI = new contracts created = trend strengthening.
-    // Falling OI = contracts closed = trend weakening / deleveraging.
-    //
-    //  > +5%    Strong inflow    — green  (significant new capital entering)
-    //  +1 to +5% Building        — chartBlue (participation growing, healthy)
-    //  -1 to +1% Flat            — chartBlue neutral (balanced, no signal)
-    //  -5 to -1% Deleveraging    — amber  (positions closing, trend softening)
-    //  < -5%    Sharp unwind     — red    (mass closing, potential reversal/flush)
-    // ── Open Interest — Price × OI matrix ────────────────────────────────
-    // OI change alone is ambiguous. The signal requires combining with price direction:
-    //
-    //  Price ↑ + OI ↑ → BULL   New money entering to buy. Trend strengthening.
-    //  Price ↓ + OI ↑ → BEAR   New money entering to short. Downtrend strengthening.
-    //  Price ↑ + OI ↓ → WARN   Shorts covering OR longs profit-taking. Trend weakening.
-    //  Price ↓ + OI ↓ → BULL   Panic sellers / short covering. Potential bottom / reversal.
-    //
-    // priceChg = BTC 24h % change, oiChg = OI 24h % change
-    function oiZone(oiValue, oiChg, priceChg) {
-      const noData = oiChg == null || isNaN(parseFloat(oiChg)) || !oiValue;
-      const noPrice = priceChg == null || isNaN(parseFloat(priceChg));
-      if (noData) return { color: C.muted, label: null, subtext: "Price × OI = combined signal" };
-
-      const oi  = parseFloat(oiChg);
-      const oiUp   = oi  >= 0;
-      const oiDown = oi  <  0;
-
-      if (noPrice) {
-        // No price data — fall back to OI direction only
-        return oiUp
-          ? { color: C.chartBlue, label: `▲ OI +${oi.toFixed(1)}% — Building`,    subtext: "OI rising · await price direction" }
-          : { color: C.amber,     label: `▼ OI ${oi.toFixed(1)}% — Declining`,    subtext: "OI falling · positions closing"    };
-      }
-
-      const pr   = parseFloat(priceChg);
-      const prUp = pr >= 0;
-
-      if (prUp && oiUp)   return {
-        color: C.green,
-        label: `▲ Price +${pr.toFixed(1)}% · OI +${oi.toFixed(1)}% — BULLISH`,
-        subtext: "New longs entering · uptrend strengthening"
-      };
-      if (!prUp && oiUp)  return {
-        color: C.red,
-        label: `▼ Price ${pr.toFixed(1)}% · OI +${oi.toFixed(1)}% — BEARISH`,
-        subtext: "New shorts entering · downtrend strengthening"
-      };
-      if (prUp && oiDown) return {
-        color: C.amber,
-        label: `▲ Price +${pr.toFixed(1)}% · OI ${oi.toFixed(1)}% — WEAKENING`,
-        subtext: "Shorts covering / profit-taking · trend losing conviction"
-      };
-      // prDown && oiDown
-      return {
-        color: C.chartBlue,
-        label: `▼ Price ${pr.toFixed(1)}% · OI ${oi.toFixed(1)}% — BOTTOMING?`,
-        subtext: "Panic selling or shorts covering · watch for reversal"
-      };
-    }
-
-    // ── Stablecoin Volume 4-zone signal ───────────────────────────────────
-    // Volume is a participation/activity signal, not purely directional.
-    // A spike means capital is in motion but context determines if it's
-    // risk-on accumulation or risk-off rotation — treat extreme spikes as caution.
-    //
-    //  > +20%   Extreme spike  — amber  (major capital in motion, ambiguous — check other signals)
-    //  +5 to +20% Active       — green  (healthy participation, dry powder building)
-    //  -5 to +5%  Normal       — blue   (routine variance, no signal)
-    //  < -5%    Declining      — red    (low activity, complacency or capital already deployed)
-    // ── Net Liquidity zone (WALCL − TGA − RRP) ───────────────────────────
-    // Rising = more liquidity in system = bullish for risk assets
-    // Falling = liquidity draining = bearish
-    // ── ISM Manufacturing PMI zone ────────────────────────────────────────
-    // Level + direction both matter:
-    //  ≥ 55        Strong expansion  — green
-    //  50–55       Mild expansion    — chartBlue
-    //  45–50       Mild contraction  — amber
-    //  < 45        Deep contraction  — red
-    // Change (month-over-month points) shown as trend direction
-    function ismZone(value, change) {
-      const v   = parseFloat(value);
-      const chg = parseFloat(change);
-      if (isNaN(v) || !value) return { color: C.muted, label: null, subtext: "ISM Manufacturing PMI · >50 = expansion" };
-      const trend = !isNaN(chg) ? (chg > 0 ? ` ▲ +${chg.toFixed(1)}` : chg < 0 ? ` ▼ ${chg.toFixed(1)}` : "") : "";
-      if (v >= 55)  return { color: C.green,     label: `${v.toFixed(1)}${trend} — Strong Expansion`,  subtext: "Manufacturing expanding rapidly · bullish"     };
-      if (v >= 50)  return { color: C.chartBlue,  label: `${v.toFixed(1)}${trend} — Expanding`,         subtext: "Above 50 · growth cycle intact"                };
-      if (v >= 45)  return { color: C.amber,      label: `${v.toFixed(1)}${trend} — Contracting`,       subtext: "Below 50 · watch for deterioration"           };
-      return             { color: C.red,         label: `${v.toFixed(1)}${trend} — Deep Contraction`, subtext: "⚠ Below 45 · recession signal"                };
-    }
-
-    function netliqZone(value, change) {
-      if (!value || change == null || isNaN(change)) return { color: C.muted, label: null, subtext: "WALCL − TGA − RRP" };
-      const chg = parseFloat(change);
-      if (chg > 1)   return { color: C.green,     label: `▲ +${chg.toFixed(1)}% — Expanding`,  subtext: "Liquidity rising · bullish for risk assets"  };
-      if (chg > 0)   return { color: C.chartBlue, label: `▲ +${chg.toFixed(2)}% — Slight Rise`, subtext: "Mild liquidity expansion"                    };
-      if (chg === 0) return { color: C.chartBlue, label: `► Unchanged`,                          subtext: "Flat liquidity · no strong signal"           };
-      if (chg > -1)  return { color: C.amber,     label: `▼ ${chg.toFixed(2)}% — Slight Drain`, subtext: "Mild liquidity contraction · watch closely"  };
-      return              { color: C.red,        label: `▼ ${chg.toFixed(1)}% — Contracting`,  subtext: "⚠ Liquidity draining · bearish for risk assets" };
-    }
-
-    function stabvolZone(value, change) {
-      if (change == null || isNaN(change) || !value) return { color: C.muted, label: null, subtext: "24h USDT volume · activity signal" };
-      const chg = parseFloat(change);
-      if (chg > 20)  return { color: C.amber,     label: `▲ +${chg.toFixed(1)}% — Extreme Spike`,  subtext: "⚠ Major capital in motion · check other signals" };
-      if (chg > 5)   return { color: C.green,     label: `▲ +${chg.toFixed(1)}% — Active`,         subtext: "Participation rising · dry powder building"      };
-      if (chg > -5)  return { color: C.chartBlue, label: `► ${chg.toFixed(1)}% — Normal`,          subtext: "Routine activity · no strong signal"             };
-      return              { color: C.red,        label: `▼ ${chg.toFixed(1)}% — Declining`,      subtext: "Low participation · complacency or fully deployed" };
-    }
-
     function SectionLabel({ children }) {
-      return (
-        <div style={{ fontSize: 11, fontFamily: mono, color: C.muted, textTransform: "uppercase",
-          letterSpacing: "0.1em", marginBottom: 10, paddingBottom: 6, borderBottom: `1px solid ${C.border}` }}>
-          {children}
-        </div>
-      );
+      return <div style={{ fontSize: 11, fontFamily: mono, color: C.muted, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10, paddingBottom: 6, borderBottom: `1px solid ${C.border}` }}>{children}</div>;
     }
 
     function SignalBar({ signals }) {
@@ -421,26 +243,16 @@
       const overall = bears >= 4 ? "DEFENSIVE" : bulls >= 5 ? "BULLISH" : "NEUTRAL";
       const col = overall === "DEFENSIVE" ? C.red : overall === "BULLISH" ? C.green : C.amber;
       return (
-        <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8,
-          padding: "12px 20px", display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap" }}>
+        <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: "12px 20px", display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <div style={{ width: 10, height: 10, borderRadius: "50%", background: col, boxShadow: `0 0 6px ${col}88` }} />
             <span style={{ fontFamily: sans, fontWeight: 700, fontSize: 15, color: col }}>{overall}</span>
           </div>
           <div style={{ display: "flex", gap: 4, flex: 1, minWidth: 120 }}>
-            {Array.from({ length: total }).map((_, i) => (
-              <div key={i} style={{ flex: 1, height: 5, borderRadius: 3,
-                background: i < bulls ? C.green : i < bulls + bears ? C.red : C.chartBlue }} />
-            ))}
+            {Array.from({ length: total }).map((_, i) => <div key={i} style={{ flex: 1, height: 5, borderRadius: 3, background: i < bulls ? C.green : i < bulls + bears ? C.red : C.chartBlue }} />)}
           </div>
-          <span style={{ fontFamily: mono, fontSize: 11, color: C.muted }}>
-            {bulls} bull · {bears} bear · {total - bulls - bears} neutral
-          </span>
-          {bears >= 4 && (
-            <span style={{ fontFamily: mono, fontSize: 11, color: C.red,
-              background: C.red + "18", border: `1px solid ${C.red}44`,
-              borderRadius: 4, padding: "2px 8px" }}>⚠ 4+ RED — consider stables</span>
-          )}
+          <span style={{ fontFamily: mono, fontSize: 11, color: C.muted }}>{bulls} bull · {bears} bear · {total - bulls - bears} neutral</span>
+          {bears >= 4 && <span style={{ fontFamily: mono, fontSize: 11, color: C.red, background: C.red + "18", border: `1px solid ${C.red}44`, borderRadius: 4, padding: "2px 8px" }}>⚠ 4+ RED — consider stables</span>}
         </div>
       );
     }
@@ -448,8 +260,7 @@
     function ScanLog({ log }) {
       if (!log.length) return null;
       return (
-        <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 6,
-          padding: "10px 14px", maxHeight: 160, overflowY: "auto" }}>
+        <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 6, padding: "10px 14px", maxHeight: 160, overflowY: "auto" }}>
           {log.map((l, i) => (
             <div key={i} style={{ fontFamily: mono, fontSize: 11, lineHeight: 1.8, display: "flex", gap: 10 }}>
               <span style={{ color: l.ok ? C.green : C.red }}>{l.ok ? "✓" : "✗"}</span>
@@ -479,8 +290,7 @@
               const s = i * 36 - 90, e = s + 36;
               const sx = cx + r * Math.cos(rad(s)), sy = cy + r * Math.sin(rad(s));
               const ex = cx + r * Math.cos(rad(e)), ey = cy + r * Math.sin(rad(e));
-              return <path key={i} d={`M${cx},${cy} L${sx},${sy} A${r},${r} 0 0,1 ${ex},${ey} Z`}
-                fill={[C.red+"44",C.amber+"33",C.chartBlue+"33",C.amber+"33",C.red+"44"][i]} stroke="none" />;
+              return <path key={i} d={`M${cx},${cy} L${sx},${sy} A${r},${r} 0 0,1 ${ex},${ey} Z`} fill={[C.red+"44",C.amber+"33",C.chartBlue+"33",C.amber+"33",C.red+"44"][i]} stroke="none" />;
             })}
             <line x1={cx} y1={cy} x2={nx} y2={ny} stroke={col} strokeWidth={2.5} strokeLinecap="round" />
             <circle cx={cx} cy={cy} r={4} fill={col} />
@@ -491,59 +301,34 @@
       );
     }
 
-    // ── BTC Dominance Zone Bar ────────────────────────────────────────────
     function DomZoneBar({ value }) {
       const v = parseFloat(value);
       if (isNaN(v)) return null;
       const zones = [
-        { label: ">60%",     min: 60, max: 80,  color: C.blue,      desc: "BTC Phase"  },
-        { label: "55–60%",   min: 55, max: 60,  color: C.amber,     desc: "Rotation"   },
-        { label: "50–55%",   min: 50, max: 55,  color: C.chartBlue, desc: "Alt Near"   },
-        { label: "40–50%",   min: 40, max: 50,  color: C.green,     desc: "Altseason"  },
-        { label: "<40%",     min: 0,  max: 40,  color: C.red,       desc: "Euphoria"   },
+        { label: ">60%", min: 60, max: 80, color: C.blue, desc: "BTC Phase" },
+        { label: "55–60%", min: 55, max: 60, color: C.amber, desc: "Rotation" },
+        { label: "50–55%", min: 50, max: 55, color: C.chartBlue, desc: "Alt Near" },
+        { label: "40–50%", min: 40, max: 50, color: C.green, desc: "Altseason" },
+        { label: "<40%", min: 0, max: 40, color: C.red, desc: "Euphoria" },
       ];
-      // The 5 labels (40, 50, 55, 60, 80) are evenly spaced at 0/25/50/75/100%
-      // of the bar width. Map value to the same scale so needle aligns with labels.
       let pct;
-      if      (v >= 80) pct = 100;
-      else if (v >= 60) pct = 75 + ((v - 60) / 20) * 25;
-      else if (v >= 55) pct = 50 + ((v - 55) / 5)  * 25;
-      else if (v >= 50) pct = 25 + ((v - 50) / 5)  * 25;
-      else if (v >= 40) pct = 0  + ((v - 40) / 10) * 25;
-      else              pct = 0;
+      if (v >= 80) pct = 100; else if (v >= 60) pct = 75 + ((v - 60) / 20) * 25;
+      else if (v >= 55) pct = 50 + ((v - 55) / 5) * 25; else if (v >= 50) pct = 25 + ((v - 50) / 5) * 25;
+      else if (v >= 40) pct = 0 + ((v - 40) / 10) * 25; else pct = 0;
       return (
         <div style={{ marginTop: 10 }}>
-          {/* Zone legend pills */}
           <div style={{ display: "flex", gap: 4, marginBottom: 6, flexWrap: "wrap" }}>
             {zones.map(z => {
               const active = v >= z.min && v < z.max;
-              return (
-                <span key={z.label} style={{
-                  fontFamily: mono, fontSize: 9, padding: "1px 6px", borderRadius: 3,
-                  color: z.color,
-                  background: active ? z.color + "33" : z.color + "11",
-                  border: `1px solid ${active ? z.color + "88" : z.color + "22"}`,
-                  fontWeight: active ? 700 : 400,
-                }}>{z.label}</span>
-              );
+              return <span key={z.label} style={{ fontFamily: mono, fontSize: 9, padding: "1px 6px", borderRadius: 3, color: z.color, background: active ? z.color + "33" : z.color + "11", border: `1px solid ${active ? z.color + "88" : z.color + "22"}`, fontWeight: active ? 700 : 400 }}>{z.label}</span>;
             })}
           </div>
-          {/* Gradient bar with needle */}
-          <div style={{ position: "relative", height: 6, borderRadius: 4,
-            background: `linear-gradient(to left, ${C.blue}, ${C.amber}, ${C.chartBlue}, ${C.green}, ${C.red})` }}>
-            <div style={{
-              position: "absolute", top: -4, left: `${pct}%`,
-              transform: "translateX(-50%)",
-              width: 3, height: 14, borderRadius: 2,
-              background: C.text, boxShadow: `0 0 4px #000`,
-            }} />
+          <div style={{ position: "relative", height: 6, borderRadius: 4, background: `linear-gradient(to left, ${C.blue}, ${C.amber}, ${C.chartBlue}, ${C.green}, ${C.red})` }}>
+            <div style={{ position: "absolute", top: -4, left: `${pct}%`, transform: "translateX(-50%)", width: 3, height: 14, borderRadius: 2, background: C.text, boxShadow: `0 0 4px #000` }} />
           </div>
-          <div style={{ display: "flex", justifyContent: "space-between",
-            fontFamily: mono, fontSize: 9, color: C.muted, marginTop: 3 }}>
-            <span style={{ color: C.red }}>40%</span>
-            <span style={{ color: C.green }}>50%</span>
-            <span style={{ color: C.chartBlue }}>55%</span>
-            <span style={{ color: C.amber }}>60%</span>
+          <div style={{ display: "flex", justifyContent: "space-between", fontFamily: mono, fontSize: 9, color: C.muted, marginTop: 3 }}>
+            <span style={{ color: C.red }}>40%</span><span style={{ color: C.green }}>50%</span>
+            <span style={{ color: C.chartBlue }}>55%</span><span style={{ color: C.amber }}>60%</span>
             <span style={{ color: C.blue }}>80%+</span>
           </div>
         </div>
@@ -553,7 +338,6 @@
     function ETHBTCBar({ ratio }) {
       const target = 0.040;
       const pct = Math.min(100, ((ratio || 0) / target) * 100);
-      // bar always light blue
       return (
         <div style={{ marginTop: 6 }}>
           <div style={{ display: "flex", justifyContent: "space-between", fontFamily: mono, fontSize: 10, color: C.muted, marginBottom: 4 }}>
@@ -570,112 +354,6 @@
       );
     }
 
-    // ── Liquidity vs BTC Chart ────────────────────────────────────────────
-    // Fetches WALCL (Fed balance sheet) from FRED and BTC price from CoinGecko
-    // directly in the browser. WALCL series is shifted forward 10 weeks on the
-    // x-axis to visualise the liquidity lead on BTC price.
-    // ── US Session Clock ──────────────────────────────────────────────────
-    // Shows current ET time, session status, and countdown to next key event.
-    // UK offset: GMT (winter) = ET+5h, BST (summer, Mar-Oct) = ET+6h
-    function USSessionClock() {
-      const [now, setNow] = React.useState(new Date());
-      React.useEffect(() => {
-        const t = setInterval(() => setNow(new Date()), 1000);
-        return () => clearInterval(t);
-      }, []);
-
-      // Get ET time (handles DST automatically via toLocaleString)
-      const etStr  = now.toLocaleString("en-US", { timeZone: "America/New_York", hour12: false,
-        hour: "2-digit", minute: "2-digit", second: "2-digit" });
-      const ukStr  = now.toLocaleString("en-GB", { timeZone: "Europe/London", hour12: false,
-        hour: "2-digit", minute: "2-digit", second: "2-digit" });
-      const etParts = etStr.split(":").map(Number);
-      const etMins  = etParts[0] * 60 + etParts[1];
-
-      // Session definitions (ET minutes)
-      const sessions = [
-        { name: "Pre-Market",   start:  4*60,       end:  9*60+30,  color: C.amber  },
-        { name: "NYSE Open",    start:  9*60+30,    end: 16*60,     color: C.green  },
-        { name: "After Hours",  start: 16*60,       end: 20*60,     color: C.amber  },
-        { name: "Market Closed",start: 20*60,       end: 28*60,     color: C.muted  }, // wraps midnight
-      ];
-
-      let current = sessions[3]; // default closed
-      let nextSession = sessions[0];
-      let minsToNext = 0;
-
-      for (let i = 0; i < sessions.length; i++) {
-        const s = sessions[i];
-        if (etMins >= s.start && etMins < s.end) {
-          current = s;
-          const next = sessions[(i + 1) % sessions.length];
-          nextSession = next;
-          minsToNext = s.end - etMins;
-          break;
-        }
-      }
-      if (minsToNext === 0) {
-        // Before pre-market
-        minsToNext = sessions[0].start - etMins;
-        if (minsToNext < 0) minsToNext += 24 * 60;
-      }
-
-      const hh = Math.floor(minsToNext / 60);
-      const mm = minsToNext % 60;
-      const countdown = hh + "h " + String(mm).padStart(2,"0") + "m";
-
-      // NYSE open bar (9:30-16:00 = 390 mins)
-      const sessionPct = current.name === "NYSE Open"
-        ? Math.min(100, ((etMins - 9*60-30) / 390) * 100) : null;
-
-      return (
-        <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: "14px 20px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
-            {/* Session status */}
-            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <div style={{ width: 8, height: 8, borderRadius: "50%", background: current.color,
-                boxShadow: current.name === "NYSE Open" ? `0 0 6px ${current.color}` : "none" }} />
-              <div>
-                <div style={{ fontFamily: sans, fontWeight: 700, fontSize: 14, color: current.color }}>
-                  {current.name}
-                </div>
-                <div style={{ fontFamily: mono, fontSize: 10, color: C.muted, marginTop: 2 }}>
-                  {current.name !== "Market Closed" && current.name !== "NYSE Open"
-                    ? `${nextSession.name} in ${countdown}`
-                    : current.name === "NYSE Open"
-                    ? `Closes in ${countdown}`
-                    : `Pre-market opens in ${countdown}`}
-                </div>
-              </div>
-            </div>
-            {/* Clocks */}
-            <div style={{ display: "flex", gap: 24 }}>
-              <div style={{ textAlign: "center" }}>
-                <div style={{ fontFamily: mono, fontSize: 18, fontWeight: 700, color: C.text, letterSpacing: "0.05em" }}>{etStr}</div>
-                <div style={{ fontFamily: mono, fontSize: 9, color: C.muted, marginTop: 2 }}>NEW YORK (ET)</div>
-              </div>
-              <div style={{ textAlign: "center" }}>
-                <div style={{ fontFamily: mono, fontSize: 18, fontWeight: 700, color: C.chartBlue, letterSpacing: "0.05em" }}>{ukStr}</div>
-                <div style={{ fontFamily: mono, fontSize: 9, color: C.muted, marginTop: 2 }}>LONDON (UK)</div>
-              </div>
-            </div>
-          </div>
-          {/* NYSE session progress bar */}
-          {sessionPct !== null && (
-            <div style={{ marginTop: 10 }}>
-              <div style={{ background: C.border, borderRadius: 3, height: 4 }}>
-                <div style={{ width: `${sessionPct}%`, background: C.green, borderRadius: 3, height: "100%", transition: "width 1s" }} />
-              </div>
-              <div style={{ fontFamily: mono, fontSize: 9, color: C.muted, marginTop: 3 }}>
-                NYSE session progress · 09:30–16:00 ET &nbsp;·&nbsp; 14:30–21:00 UK
-              </div>
-            </div>
-          )}
-        </div>
-      );
-    }
-
-    // ── 24h Range Bar ─────────────────────────────────────────────────────
     function RangeBar({ price, high, low, label }) {
       if (!price || !high || !low || high <= low) return null;
       const pct = Math.min(100, Math.max(0, ((price - low) / (high - low)) * 100));
@@ -688,252 +366,626 @@
             <span style={{ color: C.green }}>H ${high.toLocaleString()}</span>
           </div>
           <div style={{ background: C.border, borderRadius: 4, height: 6, position: "relative" }}>
-            <div style={{ position: "absolute", left: 0, top: 0, width: `${pct}%`, height: "100%",
-              background: `linear-gradient(to right, ${C.red}, ${C.amber}, ${C.green})`,
-              borderRadius: 4 }} />
-            <div style={{ position: "absolute", top: -4, left: `${pct}%`, transform: "translateX(-50%)",
-              width: 3, height: 14, background: C.text, borderRadius: 2, boxShadow: "0 0 4px #000" }} />
+            <div style={{ position: "absolute", left: 0, top: 0, width: `${pct}%`, height: "100%", background: `linear-gradient(to right, ${C.red}, ${C.amber}, ${C.green})`, borderRadius: 4 }} />
+            <div style={{ position: "absolute", top: -4, left: `${pct}%`, transform: "translateX(-50%)", width: 3, height: 14, background: C.text, borderRadius: 2, boxShadow: "0 0 4px #000" }} />
           </div>
-          <div style={{ fontFamily: mono, fontSize: 10, color: col, marginTop: 3, textAlign: "center" }}>
-            ${price.toLocaleString()} · {pct.toFixed(0)}% of range
+          <div style={{ fontFamily: mono, fontSize: 10, color: col, marginTop: 3, textAlign: "center" }}>${price.toLocaleString()} · {pct.toFixed(0)}% of range</div>
+        </div>
+      );
+    }
+
+    function USSessionClock() {
+      const [nowTime, setNowTime] = useState(new Date());
+      useEffect(() => { const t = setInterval(() => setNowTime(new Date()), 1000); return () => clearInterval(t); }, []);
+      const etStr = nowTime.toLocaleString("en-US", { timeZone: "America/New_York", hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
+      const ukStr = nowTime.toLocaleString("en-GB", { timeZone: "Europe/London", hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
+      const etParts = etStr.split(":").map(Number);
+      const etMins = etParts[0] * 60 + etParts[1];
+      const sessions = [
+        { name: "Pre-Market", start: 4*60, end: 9*60+30, color: C.amber },
+        { name: "NYSE Open", start: 9*60+30, end: 16*60, color: C.green },
+        { name: "After Hours", start: 16*60, end: 20*60, color: C.amber },
+        { name: "Market Closed", start: 20*60, end: 28*60, color: C.muted },
+      ];
+      let current = sessions[3], nextSession = sessions[0], minsToNext = 0;
+      for (let i = 0; i < sessions.length; i++) {
+        const s = sessions[i];
+        if (etMins >= s.start && etMins < s.end) {
+          current = s; nextSession = sessions[(i + 1) % sessions.length]; minsToNext = s.end - etMins; break;
+        }
+      }
+      if (minsToNext === 0) { minsToNext = sessions[0].start - etMins; if (minsToNext < 0) minsToNext += 24 * 60; }
+      const hh = Math.floor(minsToNext / 60), mm = minsToNext % 60;
+      const countdown = hh + "h " + String(mm).padStart(2, "0") + "m";
+      const sessionPct = current.name === "NYSE Open" ? Math.min(100, ((etMins - 9*60-30) / 390) * 100) : null;
+      return (
+        <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: "14px 20px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <div style={{ width: 8, height: 8, borderRadius: "50%", background: current.color, boxShadow: current.name === "NYSE Open" ? `0 0 6px ${current.color}` : "none" }} />
+              <div>
+                <div style={{ fontFamily: sans, fontWeight: 700, fontSize: 14, color: current.color }}>{current.name}</div>
+                <div style={{ fontFamily: mono, fontSize: 10, color: C.muted, marginTop: 2 }}>
+                  {current.name === "NYSE Open" ? `Closes in ${countdown}` : `${nextSession.name} in ${countdown}`}
+                </div>
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 24 }}>
+              <div style={{ textAlign: "center" }}>
+                <div style={{ fontFamily: mono, fontSize: 18, fontWeight: 700, color: C.text, letterSpacing: "0.05em" }}>{etStr}</div>
+                <div style={{ fontFamily: mono, fontSize: 9, color: C.muted, marginTop: 2 }}>NEW YORK (ET)</div>
+              </div>
+              <div style={{ textAlign: "center" }}>
+                <div style={{ fontFamily: mono, fontSize: 18, fontWeight: 700, color: C.chartBlue, letterSpacing: "0.05em" }}>{ukStr}</div>
+                <div style={{ fontFamily: mono, fontSize: 9, color: C.muted, marginTop: 2 }}>LONDON (UK)</div>
+              </div>
+            </div>
           </div>
+          {sessionPct !== null && (
+            <div style={{ marginTop: 10 }}>
+              <div style={{ background: C.border, borderRadius: 3, height: 4 }}>
+                <div style={{ width: `${sessionPct}%`, background: C.green, borderRadius: 3, height: "100%", transition: "width 1s" }} />
+              </div>
+              <div style={{ fontFamily: mono, fontSize: 9, color: C.muted, marginTop: 3 }}>NYSE session progress · 09:30–16:00 ET · 14:30–21:00 UK</div>
+            </div>
+          )}
         </div>
       );
     }
 
     function LiquidityChart() {
-      const [chartData, setChartData]   = React.useState(null);
-      const [loading, setLoading]       = React.useState(false);
-      const [error, setError]           = React.useState(null);
-      const [lagWeeks, setLagWeeks]     = React.useState(10);
-      const canvasRef                   = React.useRef(null);
-      const chartRef                    = React.useRef(null);
-
-      // FRED blocks direct browser fetches (CORS). Route via proxy.
-      // Binance public klines API supports browser CORS — no auth, no rate limits.
+      const [chartData, setChartData] = useState(null);
+      const [loading, setLoading] = useState(false);
+      const [error, setError] = useState(null);
+      const [lagWeeks, setLagWeeks] = useState(10);
+      const canvasRef = useRef(null);
+      const chartRef = useRef(null);
       const FRED_RAW   = "https://fred.stlouisfed.org/graph/fredgraph.csv?id=WALCL";
       const FRED_WALCL = "https://corsproxy.io/?" + encodeURIComponent(FRED_RAW);
       const BTC_URL    = "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1w&limit=65";
-
-      const fetchChartData = React.useCallback(async () => {
-        setLoading(true);
-        setError(null);
+      const fetchChartData = useCallback(async () => {
+        setLoading(true); setError(null);
         try {
-          // Fetch WALCL and BTC in parallel
           const FRED_FALLBACK = "https://api.allorigins.win/raw?url=" + encodeURIComponent(FRED_RAW);
           let walclRes;
-          try {
-            walclRes = await fetch(FRED_WALCL);
-            if (!walclRes.ok) throw new Error();
-          } catch {
-            walclRes = await fetch(FRED_FALLBACK);
-          }
+          try { walclRes = await fetch(FRED_WALCL); if (!walclRes.ok) throw new Error(); } catch { walclRes = await fetch(FRED_FALLBACK); }
           const btcRes = await fetch(BTC_URL);
-          if (!walclRes.ok) throw new Error("FRED WALCL fetch failed — both proxies blocked");
-          if (!btcRes.ok)   throw new Error("Binance BTC fetch failed (HTTP " + btcRes.status + ")");
-
+          if (!walclRes.ok) throw new Error("FRED WALCL fetch failed");
+          if (!btcRes.ok) throw new Error("Binance BTC fetch failed");
           const walclText = await walclRes.text();
-          const btcJson   = await btcRes.json();
-
-          // Parse WALCL CSV — last 60 weeks
-          const walclRows = walclText.trim().split("\n").slice(1)
-            .map(r => { const [d, v] = r.split(","); return { date: new Date(d), val: parseFloat(v) / 1e6 }; }) // $T
-            .filter(r => !isNaN(r.val))
-            .slice(-60);
-
-          // Parse Binance klines — format: [openTime, open, high, low, close, ...]
-          const btcPrices = btcJson.map(k => ({ date: new Date(k[0]), price: parseFloat(k[4]) })); // close price
-
+          const btcJson = await btcRes.json();
+          const walclRows = walclText.trim().split("\n").slice(1).map(r => { const [d, v] = r.split(","); return { date: new Date(d), val: parseFloat(v) / 1e6 }; }).filter(r => !isNaN(r.val)).slice(-60);
+          const btcPrices = btcJson.map(k => ({ date: new Date(k[0]), price: parseFloat(k[4]) }));
           setChartData({ walcl: walclRows, btc: btcPrices });
-        } catch(e) {
-          setError(e.message);
-        }
+        } catch(e) { setError(e.message); }
         setLoading(false);
       }, []);
-
-      // Draw chart whenever data or lag changes
-      React.useEffect(() => {
+      useEffect(() => {
         if (!chartData || !canvasRef.current) return;
-
-        // Destroy previous chart instance
         if (chartRef.current) { chartRef.current.destroy(); chartRef.current = null; }
-
         const { walcl, btc } = chartData;
         const LAG_MS = lagWeeks * 7 * 24 * 3600 * 1000;
-
-        // Shift WALCL dates forward by lag
         const walclShifted = walcl.map(r => ({ x: new Date(r.date.getTime() + LAG_MS), y: r.val }));
-
-        // BTC data as {x, y}
         const btcPoints = btc.map(r => ({ x: r.date, y: r.price }));
-
         const ctx = canvasRef.current.getContext("2d");
         chartRef.current = new window.Chart(ctx, {
           type: "line",
-          data: {
-            datasets: [
-              {
-                label: `Fed Balance Sheet (+${lagWeeks}w lead)`,
-                data: walclShifted,
-                borderColor: "#79c6ff",
-                backgroundColor: "#79c6ff18",
-                borderWidth: 2,
-                pointRadius: 0,
-                tension: 0.3,
-                yAxisID: "yLiq",
-                fill: true,
-              },
-              {
-                label: "BTC Price (log)",
-                data: btcPoints,
-                borderColor: "#f0b453",
-                backgroundColor: "transparent",
-                borderWidth: 2,
-                pointRadius: 0,
-                tension: 0.3,
-                yAxisID: "yBTC",
-              },
-            ],
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            interaction: { mode: "index", intersect: false },
-            plugins: {
-              legend: {
-                labels: { color: "#8b949e", font: { family: "'JetBrains Mono', monospace", size: 11 } }
-              },
-              tooltip: {
-                backgroundColor: "#161b22",
-                borderColor: "#30363d",
-                borderWidth: 1,
-                titleColor: "#e6edf3",
-                bodyColor: "#8b949e",
-                titleFont: { family: "'JetBrains Mono', monospace", size: 11 },
-                bodyFont:  { family: "'JetBrains Mono', monospace", size: 11 },
-                callbacks: {
-                  title: items => {
-                    const d = new Date(items[0].parsed.x);
-                    return d.toLocaleDateString("en-GB", { day:"numeric", month:"short", year:"numeric" });
-                  },
-                  label: item => {
-                    if (item.datasetIndex === 0) return ` Liquidity: $${item.parsed.y.toFixed(2)}T`;
-                    return ` BTC: $${Math.round(item.parsed.y).toLocaleString()}`;
-                  }
-                }
-              },
-            },
-            scales: {
-              x: {
-                type: "time",
-                time: { unit: "month", displayFormats: { month: "MMM yy" } },
-                grid:  { color: "#30363d44" },
-                ticks: { color: "#8b949e", font: { family: "'JetBrains Mono', monospace", size: 10 }, maxRotation: 0 },
-              },
-              yLiq: {
-                type: "linear",
-                position: "left",
-                grid:  { color: "#30363d44" },
-                ticks: {
-                  color: "#79c6ff",
-                  font: { family: "'JetBrains Mono', monospace", size: 10 },
-                  callback: v => "$" + v.toFixed(1) + "T"
-                },
-                title: { display: true, text: "Fed Balance Sheet ($T)", color: "#79c6ff", font: { size: 10 } },
-              },
-              yBTC: {
-                type: "logarithmic",
-                position: "right",
-                grid: { drawOnChartArea: false },
-                ticks: {
-                  color: "#f0b453",
-                  font: { family: "'JetBrains Mono', monospace", size: 10 },
-                  callback: v => "$" + (v >= 1000 ? Math.round(v/1000)+"k" : v)
-                },
-                title: { display: true, text: "BTC Price (log)", color: "#f0b453", font: { size: 10 } },
-              },
-            },
+          data: { datasets: [
+            { label: `Fed Balance Sheet (+${lagWeeks}w lead)`, data: walclShifted, borderColor: "#79c6ff", backgroundColor: "#79c6ff18", borderWidth: 2, pointRadius: 0, tension: 0.3, yAxisID: "yLiq", fill: true },
+            { label: "BTC Price (log)", data: btcPoints, borderColor: "#f0b453", backgroundColor: "transparent", borderWidth: 2, pointRadius: 0, tension: 0.3, yAxisID: "yBTC" },
+          ]},
+          options: { responsive: true, maintainAspectRatio: false, interaction: { mode: "index", intersect: false },
+            plugins: { legend: { labels: { color: "#8b949e", font: { family: mono, size: 11 } } }, tooltip: { backgroundColor: "#161b22", borderColor: "#30363d", borderWidth: 1, titleColor: "#e6edf3", bodyColor: "#8b949e", callbacks: { title: items => new Date(items[0].parsed.x).toLocaleDateString("en-GB", { day:"numeric", month:"short", year:"numeric" }), label: item => item.datasetIndex === 0 ? ` Liquidity: $${item.parsed.y.toFixed(2)}T` : ` BTC: $${Math.round(item.parsed.y).toLocaleString()}` } } },
+            scales: { x: { type: "time", time: { unit: "month", displayFormats: { month: "MMM yy" } }, grid: { color: "#30363d44" }, ticks: { color: "#8b949e", font: { family: mono, size: 10 }, maxRotation: 0 } }, yLiq: { type: "linear", position: "left", grid: { color: "#30363d44" }, ticks: { color: "#79c6ff", font: { family: mono, size: 10 }, callback: v => "$" + v.toFixed(1) + "T" }, title: { display: true, text: "Fed Balance Sheet ($T)", color: "#79c6ff", font: { size: 10 } } }, yBTC: { type: "logarithmic", position: "right", grid: { drawOnChartArea: false }, ticks: { color: "#f0b453", font: { family: mono, size: 10 }, callback: v => "$" + (v >= 1000 ? Math.round(v/1000)+"k" : v) }, title: { display: true, text: "BTC Price (log)", color: "#f0b453", font: { size: 10 } } } }
           },
         });
       }, [chartData, lagWeeks]);
-
-      // Load chart.js adapter for time scale
-      React.useEffect(() => {
-        if (!window.Chart) return;
-        // chart.js time scale needs date adapter — use built-in if available
-      }, []);
-
       return (
         <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, overflow: "hidden" }}>
-          {/* Header */}
-          <div style={{ padding: "12px 16px", borderBottom: `1px solid ${C.border}`,
-            display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+          <div style={{ padding: "12px 16px", borderBottom: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <span style={{ fontFamily: mono, fontSize: 11, color: C.muted, textTransform: "uppercase", letterSpacing: "0.1em" }}>
-                Liquidity vs BTC
-              </span>
-              <span style={{ fontFamily: mono, fontSize: 9, color: C.chartBlue,
-                background: C.chartBlue+"18", border:`1px solid ${C.chartBlue}44`, borderRadius: 3, padding: "1px 6px" }}>
-                WALCL shifted +{lagWeeks}w
-              </span>
+              <span style={{ fontFamily: mono, fontSize: 11, color: C.muted, textTransform: "uppercase", letterSpacing: "0.1em" }}>Liquidity vs BTC</span>
+              <span style={{ fontFamily: mono, fontSize: 9, color: C.chartBlue, background: C.chartBlue+"18", border:`1px solid ${C.chartBlue}44`, borderRadius: 3, padding: "1px 6px" }}>WALCL shifted +{lagWeeks}w</span>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              {/* Lag slider */}
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <span style={{ fontFamily: mono, fontSize: 10, color: C.muted }}>Lag:</span>
-                {[8,10,12,14].map(w => (
-                  <button key={w} onClick={() => setLagWeeks(w)}
-                    style={{ fontFamily: mono, fontSize: 10, padding: "3px 8px", borderRadius: 4, border: "none", cursor: "pointer",
-                      background: lagWeeks === w ? C.chartBlue : C.border,
-                      color: lagWeeks === w ? "#0d1117" : C.muted }}>
-                    {w}w
-                  </button>
-                ))}
+                {[8,10,12,14].map(w => <button key={w} onClick={() => setLagWeeks(w)} style={{ fontFamily: mono, fontSize: 10, padding: "3px 8px", borderRadius: 4, border: "none", cursor: "pointer", background: lagWeeks === w ? C.chartBlue : C.border, color: lagWeeks === w ? "#0d1117" : C.muted }}>{w}w</button>)}
               </div>
-              <button onClick={fetchChartData} disabled={loading}
-                style={{ fontFamily: mono, fontSize: 10, padding: "4px 12px", borderRadius: 4, border: "none",
-                  background: loading ? C.border : C.blue, color: "#0d1117", cursor: "pointer", opacity: loading ? 0.7 : 1 }}>
-                {loading ? "Loading..." : "Load Chart"}
-              </button>
+              <button onClick={fetchChartData} disabled={loading} style={{ fontFamily: mono, fontSize: 10, padding: "4px 12px", borderRadius: 4, border: "none", background: loading ? C.border : C.blue, color: "#0d1117", cursor: "pointer", opacity: loading ? 0.7 : 1 }}>{loading ? "Loading..." : "Load Chart"}</button>
             </div>
           </div>
-
-          {/* Chart area */}
           <div style={{ padding: "12px 16px" }}>
-            {error && (
-              <div style={{ fontFamily: mono, fontSize: 11, color: C.red, padding: "20px 0" }}>
-                ✗ {error} — if this persists the CORS proxy may be rate-limited, try again in a minute.
-              </div>
-            )}
-            {!chartData && !loading && !error && (
-              <div style={{ fontFamily: mono, fontSize: 11, color: C.muted, padding: "40px 0", textAlign: "center" }}>
-                Click <span style={{ color: C.blue }}>Load Chart</span> to fetch 1 year of WALCL + BTC data
-              </div>
-            )}
+            {error && <div style={{ fontFamily: mono, fontSize: 11, color: C.red, padding: "20px 0" }}>✗ {error}</div>}
+            {!chartData && !loading && !error && <div style={{ fontFamily: mono, fontSize: 11, color: C.muted, padding: "40px 0", textAlign: "center" }}>Click <span style={{ color: C.blue }}>Load Chart</span> to fetch WALCL + BTC data</div>}
             {(chartData || loading) && (
               <div style={{ position: "relative", height: 340 }}>
-                {loading && (
-                  <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center",
-                    fontFamily: mono, fontSize: 11, color: C.muted }}>
-                    Fetching FRED + CoinGecko...
-                  </div>
-                )}
+                {loading && <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: mono, fontSize: 11, color: C.muted }}>Fetching FRED + Binance...</div>}
                 <canvas ref={canvasRef} style={{ display: loading ? "none" : "block" }} />
               </div>
             )}
-            {chartData && !loading && (
-              <div style={{ marginTop: 8, fontFamily: mono, fontSize: 10, color: C.muted, lineHeight: 1.8 }}>
-                <span style={{ color: C.chartBlue }}>━</span> Fed Balance Sheet (WALCL) shifted {lagWeeks} weeks forward &nbsp;·&nbsp;
-                <span style={{ color: C.amber }}>━</span> BTC price log scale &nbsp;·&nbsp;
-                Liquidity leads BTC by ~{lagWeeks}w historically &nbsp;·&nbsp;
-                Sources: FRED/WALCL · Binance/BTCUSDT
-              </div>
-            )}
+            {chartData && !loading && <div style={{ marginTop: 8, fontFamily: mono, fontSize: 10, color: C.muted, lineHeight: 1.8 }}><span style={{ color: C.chartBlue }}>━</span> Fed Balance Sheet (WALCL) shifted {lagWeeks} weeks forward &nbsp;·&nbsp; <span style={{ color: C.amber }}>━</span> BTC price log scale &nbsp;·&nbsp; Sources: FRED · Binance</div>}
           </div>
         </div>
       );
     }
 
+    // ── PATTERNS TAB ──────────────────────────────────────────────────────
+    function candleSVG(name, w, h) {
+      const n = (name || "").toLowerCase();
+      const W = w, H = h, mx = W / 2;
+      const green = "#3fb950", red = "#f85149", gray = "#8b949e";
+      let shapes = "";
+      if (n.includes("hammer") && !n.includes("shooting") && !n.includes("inverted")) {
+        shapes = `<line x1="${mx}" y1="8" x2="${mx}" y2="${H-8}" stroke="${green}" stroke-width="1.2"/>
+        <rect x="${mx-5}" y="${H*0.15}" width="10" height="${H*0.25}" fill="${green}" rx="1"/>`;
+      } else if (n.includes("shooting star") || n.includes("inverted hammer")) {
+        shapes = `<line x1="${mx}" y1="6" x2="${mx}" y2="${H-8}" stroke="${red}" stroke-width="1.2"/>
+        <rect x="${mx-5}" y="${H*0.58}" width="10" height="${H*0.24}" fill="${red}" rx="1"/>`;
+      } else if (n.includes("bullish engulfing")) {
+        shapes = `<line x1="${mx-9}" y1="18" x2="${mx-9}" y2="${H-18}" stroke="${red}" stroke-width="1.2"/>
+        <rect x="${mx-14}" y="${H*0.35}" width="10" height="${H*0.3}" fill="${red}" rx="1"/>
+        <line x1="${mx+9}" y1="10" x2="${mx+9}" y2="${H-10}" stroke="${green}" stroke-width="1.2"/>
+        <rect x="${mx+4}" y="${H*0.22}" width="10" height="${H*0.54}" fill="${green}" rx="1"/>`;
+      } else if (n.includes("bearish engulfing")) {
+        shapes = `<line x1="${mx-9}" y1="18" x2="${mx-9}" y2="${H-18}" stroke="${green}" stroke-width="1.2"/>
+        <rect x="${mx-14}" y="${H*0.35}" width="10" height="${H*0.3}" fill="${green}" rx="1"/>
+        <line x1="${mx+9}" y1="10" x2="${mx+9}" y2="${H-10}" stroke="${red}" stroke-width="1.2"/>
+        <rect x="${mx+4}" y="${H*0.22}" width="10" height="${H*0.54}" fill="${red}" rx="1"/>`;
+      } else if (n.includes("morning star")) {
+        shapes = `<line x1="${mx-16}" y1="12" x2="${mx-16}" y2="${H-12}" stroke="${red}" stroke-width="1.2"/>
+        <rect x="${mx-21}" y="${H*0.2}" width="10" height="${H*0.4}" fill="${red}" rx="1"/>
+        <line x1="${mx}" y1="${H*0.38}" x2="${mx}" y2="${H*0.62}" stroke="${gray}" stroke-width="1.2"/>
+        <rect x="${mx-4}" y="${H*0.44}" width="8" height="${H*0.12}" fill="${gray}" rx="1"/>
+        <line x1="${mx+16}" y1="12" x2="${mx+16}" y2="${H-12}" stroke="${green}" stroke-width="1.2"/>
+        <rect x="${mx+11}" y="${H*0.25}" width="10" height="${H*0.42}" fill="${green}" rx="1"/>`;
+      } else if (n.includes("evening star")) {
+        shapes = `<line x1="${mx-16}" y1="12" x2="${mx-16}" y2="${H-12}" stroke="${green}" stroke-width="1.2"/>
+        <rect x="${mx-21}" y="${H*0.2}" width="10" height="${H*0.4}" fill="${green}" rx="1"/>
+        <line x1="${mx}" y1="${H*0.38}" x2="${mx}" y2="${H*0.62}" stroke="${gray}" stroke-width="1.2"/>
+        <rect x="${mx-4}" y="${H*0.44}" width="8" height="${H*0.12}" fill="${gray}" rx="1"/>
+        <line x1="${mx+16}" y1="12" x2="${mx+16}" y2="${H-12}" stroke="${red}" stroke-width="1.2"/>
+        <rect x="${mx+11}" y="${H*0.25}" width="10" height="${H*0.42}" fill="${red}" rx="1"/>`;
+      } else if (n.includes("three white")) {
+        [-14,0,14].forEach((dx,i) => { shapes += `<line x1="${mx+dx}" y1="${8+i*3}" x2="${mx+dx}" y2="${H-8}" stroke="${green}" stroke-width="1.2"/><rect x="${mx+dx-5}" y="${12+i*3}" width="10" height="${H*0.48-i*3}" fill="${green}" rx="1"/>`; });
+      } else if (n.includes("three black")) {
+        [-14,0,14].forEach((dx,i) => { shapes += `<line x1="${mx+dx}" y1="8" x2="${mx+dx}" y2="${H-8+i*3}" stroke="${red}" stroke-width="1.2"/><rect x="${mx+dx-5}" y="12" width="10" height="${H*0.48+i*3}" fill="${red}" rx="1"/>`; });
+      } else if (n.includes("doji")) {
+        shapes = `<line x1="${mx}" y1="8" x2="${mx}" y2="${H-8}" stroke="${gray}" stroke-width="1.2"/>
+        <rect x="${mx-8}" y="${H/2-2}" width="16" height="4" fill="${gray}" rx="1"/>`;
+      } else if (n.includes("harami")) {
+        shapes = `<line x1="${mx-8}" y1="10" x2="${mx-8}" y2="${H-10}" stroke="${red}" stroke-width="1.2"/>
+        <rect x="${mx-13}" y="${H*0.2}" width="10" height="${H*0.6}" fill="${red}" rx="1"/>
+        <line x1="${mx+8}" y1="${H*0.34}" x2="${mx+8}" y2="${H*0.66}" stroke="${green}" stroke-width="1.2"/>
+        <rect x="${mx+3}" y="${H*0.37}" width="10" height="${H*0.26}" fill="${green}" rx="1"/>`;
+      } else if (n.includes("inside bar")) {
+        shapes = `<line x1="${mx-10}" y1="10" x2="${mx-10}" y2="${H-10}" stroke="${green}" stroke-width="1.2"/>
+        <rect x="${mx-15}" y="${H*0.2}" width="10" height="${H*0.6}" fill="${green}" rx="1"/>
+        <line x1="${mx+10}" y1="${H*0.3}" x2="${mx+10}" y2="${H*0.7}" stroke="${gray}" stroke-width="1.2"/>
+        <rect x="${mx+5}" y="${H*0.35}" width="10" height="${H*0.3}" fill="${gray}" rx="1"/>`;
+      } else if (n.includes("pin bar")) {
+        shapes = `<line x1="${mx}" y1="6" x2="${mx}" y2="${H-6}" stroke="${green}" stroke-width="1.2"/>
+        <rect x="${mx-5}" y="${H*0.55}" width="10" height="${H*0.2}" fill="${green}" rx="1"/>`;
+      } else {
+        shapes = `<line x1="${mx}" y1="10" x2="${mx}" y2="${H-10}" stroke="${green}" stroke-width="1.2"/>
+        <rect x="${mx-6}" y="${H*0.3}" width="12" height="${H*0.4}" fill="${green}" rx="1"/>`;
+      }
+      return <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} xmlns="http://www.w3.org/2000/svg" dangerouslySetInnerHTML={{ __html: shapes }} />;
+    }
+
+    const PATTERN_LIBRARY = [
+      { name:"Hammer",             dir:"bull", wr:72, tf:"Weekly/Monthly" },
+      { name:"Bullish Engulfing",  dir:"bull", wr:74, tf:"Weekly" },
+      { name:"Morning Star",       dir:"bull", wr:78, tf:"Weekly/Monthly" },
+      { name:"Three White Soldiers",dir:"bull",wr:76, tf:"Weekly/Monthly" },
+      { name:"Bullish Harami",     dir:"bull", wr:65, tf:"Weekly" },
+      { name:"Shooting Star",      dir:"bear", wr:71, tf:"Weekly/Monthly" },
+      { name:"Bearish Engulfing",  dir:"bear", wr:73, tf:"Weekly" },
+      { name:"Evening Star",       dir:"bear", wr:77, tf:"Weekly/Monthly" },
+      { name:"Three Black Crows",  dir:"bear", wr:75, tf:"Weekly/Monthly" },
+      { name:"Pin Bar",            dir:"both", wr:70, tf:"Weekly/Monthly" },
+      { name:"Inside Bar",         dir:"both", wr:68, tf:"Weekly" },
+      { name:"Doji",               dir:"both", wr:62, tf:"Weekly/Monthly" },
+    ];
+
+    function PatternsTab({ sheetData }) {
+      const [patternTab, setPatternTab]   = useState("signals");
+      const [activeTF, setActiveTF]       = useState("weekly");
+      const [activeAssets, setActiveAssets] = useState(new Set(["BTC","ETH","SUI","RKLB","JOBY","PLTR","GLD","USO"]));
+      const [scanning, setScanning]       = useState(false);
+      const [signals, setSignals]         = useState([]);
+      const [scanMeta, setScanMeta]       = useState(null);
+      const [coachIdx, setCoachIdx]       = useState(null);
+      const [coachText, setCoachText]     = useState({});
+      const [coachLoading, setCoachLoading] = useState(null);
+      const [trades, setTrades]           = useState([]);
+      const [tradesMeta, setTradesMeta]   = useState(null);
+      const [tradeScan, setTradeScan]     = useState(false);
+      const [tradeCoach, setTradeCoach]   = useState({});
+      const [tradeCoachLoading, setTradeCoachLoading] = useState(null);
+
+      const ASSETS = ["BTC","ETH","SUI","RKLB","JOBY","PLTR","GLD","USO"];
+
+      const toggleAsset = (a) => {
+        setActiveAssets(prev => {
+          const next = new Set(prev);
+          if (next.has(a)) { if (next.size > 1) next.delete(a); } else next.add(a);
+          return next;
+        });
+      };
+
+      const runPatternScan = async () => {
+        setScanning(true); setSignals([]); setScanMeta(null);
+        const tfLabel = activeTF === "both" ? "weekly and monthly" : activeTF;
+        const assets = [...activeAssets].join(", ");
+        const today = new Date().toLocaleDateString("en-GB", { weekday:"short", day:"numeric", month:"short", year:"numeric" });
+        // Inject live macro data from sheet if available
+        const liveCtx = [
+          sheetData.btc   ? `BTC: ${sheetData.btc.value}` : null,
+          sheetData.vix   ? `VIX: ${sheetData.vix.value}` : null,
+          sheetData.dxy   ? `DXY: ${sheetData.dxy.value}` : null,
+          sheetData.y10   ? `10Y: ${sheetData.y10.value}` : null,
+          sheetData.fg    ? `Fear/Greed: ${sheetData.fg.value}` : null,
+        ].filter(Boolean).join(" · ");
+        const prompt = `You are a technical analyst specialising in high-win-rate candlestick patterns on ${tfLabel} candles. Today: ${today}.${liveCtx ? ` Live macro context: ${liveCtx}.` : ""}
+Scan these assets for ACTIVE pattern signals: ${assets}
+Only report patterns where ALL THREE are true: (1) price near 200-period MA ±3%, (2) volume above 20-period average, (3) RSI meaningful (oversold <35 bullish, overbought >65 bearish).
+Patterns to check: Hammer, Bullish Engulfing, Morning Star, Three White Soldiers, Bullish Harami, Shooting Star, Bearish Engulfing, Evening Star, Three Black Crows, Pin Bar, Inside Bar, Doji.
+ONLY return genuine signals. Fewer high-quality signals beats many weak ones. If nothing qualifies say so with empty array.
+Respond ONLY valid JSON no markdown:
+{"scanDate":"","tf":"","signals":[{"ticker":"","assetName":"","pattern":"","direction":"bull|bear","timeframe":"Weekly|Monthly","conviction":75,"winRate":72,"confluence":{"ma200":"bull|bear|na","volume":"bull|warn|na","rsi":"bull|bear|neutral|na","rsiValue":"32"},"thesis":"2 sentences","entryZone":"","stopLoss":"","target":"","patternAge":"forming|confirmed|1 candle old"}]}`;
+        try {
+          const res = await fetch("https://api.anthropic.com/v1/messages", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ model:"claude-sonnet-4-20250514", max_tokens:2000, messages:[{role:"user",content:prompt}] }) });
+          const data = await res.json();
+          if (data.error) throw new Error(data.error.message);
+          const raw = (data.content||[]).filter(b=>b.type==="text").map(b=>b.text).join("").replace(/```json|```/g,"").trim();
+          const parsed = JSON.parse(raw);
+          setSignals(parsed.signals || []);
+          setScanMeta(parsed);
+        } catch(e) { setScanMeta({ error: e.message }); }
+        setScanning(false);
+      };
+
+      const runTradeScan = async () => {
+        setTradeScan(true); setTrades([]); setTradesMeta(null);
+        const today = new Date().toLocaleDateString("en-GB", { weekday:"short", day:"numeric", month:"short", year:"numeric" });
+        const liveCtx = [
+          sheetData.btc     ? `BTC: ${sheetData.btc.value}` : null,
+          sheetData.eth     ? `ETH: ${sheetData.eth.value}` : null,
+          sheetData.vix     ? `VIX: ${sheetData.vix.value}` : null,
+          sheetData.dxy     ? `DXY: ${sheetData.dxy.value}` : null,
+          sheetData.y10     ? `10Y yield: ${sheetData.y10.value}` : null,
+          sheetData.fg      ? `Fear/Greed: ${sheetData.fg.value}` : null,
+          sheetData.dom     ? `BTC dom: ${sheetData.dom.value}` : null,
+          sheetData.funding ? `BTC funding: ${sheetData.funding.value}` : null,
+        ].filter(Boolean).join(" · ");
+        const prompt = `You are a professional swing trader. Today: ${today}.${liveCtx ? ` Live dashboard data: ${liveCtx}.` : " Macro context: April 2026, tariff uncertainty, elevated VIX, BTC ~$82k, gold near ATH, Fed on hold, USD weak."}
+Scan this universe for the TOP 5 best trade setups right now: BTC, ETH, SUI, RKLB, JOBY, PLTR, SMCI, GLD, USO, UNG.
+Consider: current price action, macro tailwinds/headwinds, volatility regime, momentum, sector rotation, risk/reward.
+Respond ONLY valid JSON no markdown:
+{"scanDate":"","marketRegime":"1 sentence","trades":[{"rank":1,"ticker":"","assetName":"","category":"crypto|space|tech|commodity","direction":"long|short","setup":"eg Bull flag retest","conviction":82,"thesis":"2 sentences max","entryZone":"","stopLoss":"","target1":"","target2":"","rrRatio":"","timeframe":"","robinhoodSteps":"1. ... 2. ... 3. ...","catalyst":""}]}`;
+        try {
+          const res = await fetch("https://api.anthropic.com/v1/messages", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ model:"claude-sonnet-4-20250514", max_tokens:2200, messages:[{role:"user",content:prompt}] }) });
+          const data = await res.json();
+          if (data.error) throw new Error(data.error.message);
+          const raw = (data.content||[]).filter(b=>b.type==="text").map(b=>b.text).join("").replace(/```json|```/g,"").trim();
+          const parsed = JSON.parse(raw);
+          setTrades(parsed.trades || []);
+          setTradesMeta(parsed);
+        } catch(e) { setTradesMeta({ error: e.message }); }
+        setTradeScan(false);
+      };
+
+      const askPatternCoach = async (idx) => {
+        const s = signals[idx]; if (!s) return;
+        setCoachLoading(idx);
+        const c = s.confluence || {};
+        const prompt = `You are a patient trading coach for a complete beginner. Simple language only. No unexplained jargon.
+Signal: ${s.ticker} (${s.assetName}) — ${s.pattern} on the ${s.timeframe} chart.
+Direction: ${s.direction==="bull"?"BULLISH (price expected to go UP)":"BEARISH (price expected to go DOWN)"}
+Win rate: ~${s.winRate}% historical. Conviction: ${s.conviction}%.
+Confluence: 200MA=${c.ma200||"?"}, Volume=${c.volume||"?"}, RSI=${c.rsi||"?"} (${c.rsiValue||"?"})
+Entry: ${s.entryZone} | Stop: ${s.stopLoss} | Target: ${s.target}
+Status: ${s.patternAge}. Why: ${s.thesis}
+
+Write coaching note with these EXACT headers:
+WHAT YOU'RE LOOKING AT
+WHAT THE CANDLE IS TELLING YOU
+THE THREE GREEN LIGHTS
+YOUR NUMBERS IN PLAIN ENGLISH
+BEFORE YOU DO ANYTHING
+ONE HONEST WARNING
+
+2-4 sentences each. Warm but honest. Use £500 example position. No hype.`;
+        try {
+          const res = await fetch("https://api.anthropic.com/v1/messages", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ model:"claude-sonnet-4-20250514", max_tokens:900, messages:[{role:"user",content:prompt}] }) });
+          const data = await res.json();
+          if (data.error) throw new Error(data.error.message);
+          const txt = (data.content||[]).filter(b=>b.type==="text").map(b=>b.text).join("").trim();
+          setCoachText(prev => ({ ...prev, [idx]: txt }));
+        } catch(e) { setCoachText(prev => ({ ...prev, [idx]: "⚠ " + e.message })); }
+        setCoachLoading(null);
+      };
+
+      const askTradeCoach = async (idx) => {
+        const t = trades[idx]; if (!t) return;
+        setTradeCoachLoading(idx);
+        const prompt = `You are a patient trading coach for a complete beginner. Simple language only.
+Trade setup: ${t.ticker} (${t.assetName}) — ${t.setup}. Direction: ${t.direction==="long"?"LONG (buy, expect price UP)":"SHORT (sell, expect price DOWN)"}.
+Conviction: ${t.conviction}%. R:R: ${t.rrRatio}. Timeframe: ${t.timeframe}.
+Entry: ${t.entryZone} | Stop: ${t.stopLoss} | Target 1: ${t.target1} | Target 2: ${t.target2}.
+Why: ${t.thesis}. Catalyst: ${t.catalyst||"none"}.
+How to place: ${t.robinhoodSteps||""}
+
+Write coaching note with these EXACT headers:
+WHAT IS THIS TRADE?
+WHY DOES THIS SETUP MAKE SENSE RIGHT NOW?
+THE NUMBERS EXPLAINED
+WHAT COULD GO WRONG?
+BEGINNER CHECKLIST BEFORE YOU TRADE
+HOW TO KNOW WHEN TO EXIT
+
+2-4 sentences each. Warm but honest. Use £500 example. No hype.`;
+        try {
+          const res = await fetch("https://api.anthropic.com/v1/messages", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ model:"claude-sonnet-4-20250514", max_tokens:1000, messages:[{role:"user",content:prompt}] }) });
+          const data = await res.json();
+          if (data.error) throw new Error(data.error.message);
+          const txt = (data.content||[]).filter(b=>b.type==="text").map(b=>b.text).join("").trim();
+          setTradeCoach(prev => ({ ...prev, [idx]: txt }));
+        } catch(e) { setTradeCoach(prev => ({ ...prev, [idx]: "⚠ " + e.message })); }
+        setTradeCoachLoading(null);
+      };
+
+      const formatCoach = (text) => {
+        const HEADERS = ["WHAT YOU'RE LOOKING AT","WHAT THE CANDLE IS TELLING YOU","THE THREE GREEN LIGHTS","YOUR NUMBERS IN PLAIN ENGLISH","BEFORE YOU DO ANYTHING","ONE HONEST WARNING","WHAT IS THIS TRADE?","WHY DOES THIS SETUP MAKE SENSE RIGHT NOW?","THE NUMBERS EXPLAINED","WHAT COULD GO WRONG?","BEGINNER CHECKLIST BEFORE YOU TRADE","HOW TO KNOW WHEN TO EXIT"];
+        let h = text;
+        HEADERS.forEach(hdr => { h = h.replace(new RegExp(hdr.replace(/[?()]/g,"\\$&"),"gi"), `\n__HDR__${hdr}__HDR__\n`); });
+        return h.split("\n").map((line, i) => {
+          if (line.startsWith("__HDR__")) {
+            const title = line.replace(/__HDR__/g,"");
+            return <div key={i} style={{ fontSize: 11, fontWeight: 700, color: C.purple, marginTop: 12, marginBottom: 2, borderLeft: `2px solid ${C.purple}`, paddingLeft: 6 }}>{title}</div>;
+          }
+          const clean = line.replace(/\*\*(.*?)\*\*/g, "$1").replace(/(\£[\d,\.]+|\$[\d,\.]+)/g, "$1");
+          return clean.trim() ? <div key={i} style={{ fontSize: 11, color: C.muted, lineHeight: 1.7, marginBottom: 2 }} dangerouslySetInnerHTML={{ __html: clean.replace(/(\£[\d,\.]+|\$[\d,\.]+)/g, `<span style="color:${C.green};font-weight:700">$1</span>`) }} /> : null;
+        });
+      };
+
+      const confBadge = (val, label) => {
+        const col = val === "bull" || val === "ok" ? C.green : val === "bear" || val === "warn" ? C.red : C.muted;
+        const icon = val === "bull" ? "↑" : val === "bear" ? "↓" : val === "warn" ? "⚠" : "—";
+        return <span style={{ fontSize: 9, padding: "2px 7px", borderRadius: 3, border: `0.5px solid ${col}44`, fontFamily: mono, color: col, background: col + "18" }}>{icon} {label}</span>;
+      };
+
+      const ccCol = (v) => v >= 80 ? C.green : v >= 65 ? C.chartBlue : v >= 50 ? C.amber : C.muted;
+
+      const grid = { display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(190px,1fr))", gap: 12 };
+
+      return (
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          {/* Sub-tabs */}
+          <div style={{ display: "flex", gap: 2, borderBottom: `1px solid ${C.border}` }}>
+            {[["signals","⬡ Pattern Signals"],["trades","⚡ Top 5 Trades"],["library","📖 Pattern Library"]].map(([key,label]) => (
+              <button key={key} onClick={() => setPatternTab(key)}
+                style={{ fontFamily: mono, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.07em", padding: "8px 16px", border: "none", borderRadius: "6px 6px 0 0", background: patternTab === key ? C.surface : "transparent", color: patternTab === key ? C.text : C.muted, borderBottom: patternTab === key ? `2px solid ${C.purple}` : "2px solid transparent", transition: "all 0.15s" }}>{label}</button>
+            ))}
+          </div>
+
+          {/* PATTERN SIGNALS */}
+          {patternTab === "signals" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                <span style={{ fontFamily: mono, fontSize: 10, color: C.muted }}>Timeframe:</span>
+                {[["weekly","Weekly"],["monthly","Monthly"],["both","Both"]].map(([key,label]) => (
+                  <button key={key} onClick={() => setActiveTF(key)} style={{ fontFamily: mono, fontSize: 11, padding: "4px 12px", borderRadius: 20, border: `1px solid ${activeTF===key ? C.purple : C.border}`, background: activeTF===key ? C.purple+"22" : "transparent", color: activeTF===key ? C.purple : C.muted, cursor: "pointer" }}>{label}</button>
+                ))}
+              </div>
+              <div style={{ display: "flex", gap: 5, flexWrap: "wrap", alignItems: "center" }}>
+                <span style={{ fontFamily: mono, fontSize: 10, color: C.muted }}>Assets:</span>
+                {ASSETS.map(a => (
+                  <button key={a} onClick={() => toggleAsset(a)} style={{ fontFamily: mono, fontSize: 10, padding: "3px 10px", borderRadius: 12, border: `1px solid ${activeAssets.has(a) ? C.chartBlue+"88" : C.border}`, background: activeAssets.has(a) ? C.chartBlue+"18" : "transparent", color: activeAssets.has(a) ? C.chartBlue : C.muted, cursor: "pointer" }}>{a}</button>
+                ))}
+                <button onClick={runPatternScan} disabled={scanning} style={{ marginLeft: "auto", fontFamily: mono, fontSize: 11, padding: "6px 16px", borderRadius: 6, border: "none", background: scanning ? C.border : C.purple, color: scanning ? C.muted : "#0d1117", cursor: "pointer", fontWeight: 700 }}>{scanning ? "⟳ Scanning..." : "⚡ Scan Patterns"}</button>
+              </div>
+
+              {!scanMeta && !scanning && (
+                <div style={{ padding: "2rem 0", textAlign: "center", fontFamily: mono, fontSize: 12, color: C.muted, lineHeight: 2 }}>
+                  Hit ⚡ Scan Patterns to detect high-conviction setups.<br/>
+                  <span style={{ fontSize: 11 }}>Only shows patterns with confluence: near 200 MA + volume above avg + RSI signal</span>
+                </div>
+              )}
+              {scanMeta?.error && <div style={{ fontFamily: mono, fontSize: 11, color: C.red, padding: "1rem", border: `1px solid ${C.border}`, borderRadius: 6 }}>⚠ {scanMeta.error}</div>}
+              {scanMeta && !scanMeta.error && signals.length === 0 && (
+                <div style={{ padding: "2rem 0", textAlign: "center", fontFamily: mono, fontSize: 12, color: C.muted, lineHeight: 2 }}>
+                  No high-conviction signals found on {scanMeta.tf} candles right now.<br/>
+                  <span style={{ fontSize: 11 }}>This is normal. No signal = no trade. Check back after next weekly close.</span>
+                </div>
+              )}
+              {signals.map((s, i) => {
+                const isBull = s.direction === "bull";
+                const cv = Math.min(100, Math.max(0, s.conviction || 65));
+                const c = s.confluence || {};
+                const ageCol = s.patternAge === "confirmed" ? C.green : s.patternAge === "forming" ? C.amber : C.muted;
+                return (
+                  <div key={i} style={{ background: C.surface, border: `1px solid ${isBull ? C.green+"44" : C.red+"44"}`, borderRadius: 8, overflow: "hidden" }}>
+                    <div style={{ padding: "14px 16px", display: "flex", gap: 14, alignItems: "flex-start" }}>
+                      <div style={{ flexShrink: 0 }}>{candleSVG(s.pattern, 52, 64)}</div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 6 }}>
+                          <span style={{ fontFamily: sans, fontWeight: 700, fontSize: 15, color: isBull ? C.green : C.red }}>{s.ticker}</span>
+                          <span style={{ fontFamily: mono, fontSize: 11, color: C.muted }}>{s.pattern}</span>
+                          <span style={{ fontFamily: mono, fontSize: 10, padding: "2px 8px", borderRadius: 4, border: `0.5px solid ${isBull?C.green:C.red}55`, background: (isBull?C.green:C.red)+"18", color: isBull?C.green:C.red }}>{isBull?"BULLISH":"BEARISH"}</span>
+                          <span style={{ fontFamily: mono, fontSize: 9, padding: "2px 6px", borderRadius: 3, background: C.bg, color: C.muted, border: `0.5px solid ${C.border}` }}>{s.timeframe}</span>
+                          <span style={{ fontFamily: mono, fontSize: 9, padding: "2px 6px", borderRadius: 3, background: ageCol+"18", color: ageCol, border: `0.5px solid ${ageCol}44` }}>{s.patternAge}</span>
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                          <div style={{ width: 100, height: 4, borderRadius: 2, background: C.border }}>
+                            <div style={{ width: `${cv}%`, height: "100%", borderRadius: 2, background: ccCol(cv) }} />
+                          </div>
+                          <span style={{ fontFamily: mono, fontSize: 10, color: C.muted }}>conviction {cv}%</span>
+                          <span style={{ fontFamily: mono, fontSize: 10, color: C.muted }}>hist. ~{s.winRate}% WR</span>
+                        </div>
+                        <div style={{ display: "flex", gap: 5, marginBottom: 7, flexWrap: "wrap" }}>
+                          {confBadge(c.ma200, "200 MA")}
+                          {confBadge(c.volume, "Volume")}
+                          {confBadge(c.rsi, "RSI " + (c.rsiValue || ""))}
+                        </div>
+                        <div style={{ fontFamily: mono, fontSize: 11, color: C.muted, lineHeight: 1.6, marginBottom: 8 }}>{s.thesis}</div>
+                        <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
+                          {[["Entry", s.entryZone, C.green], ["Stop", s.stopLoss, C.red], ["Target", s.target, C.chartBlue]].map(([lbl,val,col]) => (
+                            <div key={lbl}><div style={{ fontSize: 9, fontFamily: mono, color: C.muted, textTransform: "uppercase", letterSpacing: "0.06em" }}>{lbl}</div><div style={{ fontSize: 13, fontWeight: 700, color: col }}>{val || "—"}</div></div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{ padding: "10px 16px 12px", borderTop: `1px solid ${C.border}` }}>
+                      <button onClick={() => askPatternCoach(i)} disabled={coachLoading === i} style={{ fontFamily: mono, fontSize: 11, padding: "5px 14px", borderRadius: 6, border: `0.5px solid ${C.purple}55`, background: C.purple+"22", color: C.purple, cursor: "pointer" }}>
+                        {coachLoading === i ? "⟳ Coach thinking..." : coachText[i] ? "✦ Refresh Coach" : "✦ Coach — what does this mean?"}
+                      </button>
+                      {coachText[i] && (
+                        <div style={{ marginTop: 10, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 6, padding: "12px 14px" }}>
+                          {formatCoach(coachText[i])}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* TOP 5 TRADES */}
+          {patternTab === "trades" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
+                <div>
+                  <div style={{ fontFamily: sans, fontWeight: 700, fontSize: 14, color: C.text }}>Top 5 Trades Today</div>
+                  <div style={{ fontFamily: mono, fontSize: 10, color: C.muted, marginTop: 2 }}>Cross-asset: crypto + space/defense + tech + commodities · Ranked by conviction</div>
+                </div>
+                <button onClick={runTradeScan} disabled={tradeScan} style={{ fontFamily: mono, fontSize: 12, padding: "8px 20px", borderRadius: 6, border: "none", background: tradeScan ? C.border : C.chartBlue, color: "#0d1117", cursor: "pointer", fontWeight: 700 }}>
+                  {tradeScan ? "⟳ Scanning..." : "⚡ Scan Now"}
+                </button>
+              </div>
+
+              {!tradesMeta && !tradeScan && (
+                <div style={{ padding: "2.5rem 0", textAlign: "center", fontFamily: mono, fontSize: 12, color: C.muted, lineHeight: 2 }}>
+                  Hit ⚡ Scan Now to get today's top 5 trades.<br/>
+                  <span style={{ fontSize: 11 }}>Uses your live macro data + AI analysis. Each card has a ✦ Coach button.</span>
+                </div>
+              )}
+              {tradesMeta?.error && <div style={{ fontFamily: mono, fontSize: 11, color: C.red, padding: "1rem", border: `1px solid ${C.border}`, borderRadius: 6 }}>⚠ {tradesMeta.error}</div>}
+
+              {tradesMeta && !tradesMeta.error && (
+                <div style={{ fontFamily: mono, fontSize: 11, color: C.muted, padding: "8px 12px", background: C.surface, borderRadius: 6, border: `1px solid ${C.border}` }}>
+                  Regime: <span style={{ color: C.text }}>{tradesMeta.marketRegime}</span>
+                </div>
+              )}
+
+              {trades.map((t, i) => {
+                const rankColors = ["#1D9E75","#185FA5","#534AB7","#BA7517","#888780"];
+                const rCol = rankColors[(t.rank||i+1)-1] || C.muted;
+                const cv = Math.min(100, Math.max(0, t.conviction || 70));
+                const isLong = t.direction === "long";
+                const dirCol = isLong ? C.green : C.red;
+                const rhSteps = (t.robinhoodSteps || "").split(/\d+\./).filter(s => s.trim()).map((s, si) => (
+                  <div key={si} style={{ display: "flex", gap: 8, alignItems: "flex-start", padding: "3px 0" }}>
+                    <span style={{ fontSize: 10, minWidth: 18, height: 18, borderRadius: "50%", background: C.blue+"22", color: C.blue, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 1 }}>{si+1}</span>
+                    <span style={{ fontFamily: mono, fontSize: 11, color: C.text, lineHeight: 1.6 }} dangerouslySetInnerHTML={{ __html: s.trim().replace(/(\$[\d,\.]+)/g, `<span style="color:${C.green};font-weight:700">$1</span>`) }} />
+                  </div>
+                ));
+                return (
+                  <div key={i} style={{ background: C.surface, border: `1px solid ${i===0 ? C.green+"66" : C.border}`, borderRadius: 8, overflow: "hidden" }}>
+                    <div style={{ padding: "14px 16px 12px", display: "flex", gap: 12, alignItems: "flex-start" }}>
+                      <div style={{ fontFamily: sans, fontWeight: 700, fontSize: 22, color: rCol, minWidth: 28, paddingTop: 2 }}>{t.rank || i+1}</div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 5 }}>
+                          <span style={{ fontFamily: sans, fontWeight: 700, fontSize: 15, color: C.text }}>{t.ticker}</span>
+                          <span style={{ fontFamily: mono, fontSize: 11, color: C.muted }}>{t.assetName}</span>
+                          <span style={{ fontFamily: mono, fontSize: 10, padding: "2px 7px", borderRadius: 4, border: `0.5px solid ${C.border}`, color: C.muted, background: C.bg }}>{t.setup}</span>
+                          <span style={{ fontFamily: mono, fontSize: 10, padding: "2px 7px", borderRadius: 4, border: `0.5px solid ${dirCol}55`, background: dirCol+"18", color: dirCol }}>{(t.direction||"long").toUpperCase()}</span>
+                          <span style={{ fontFamily: mono, fontSize: 9, padding: "2px 6px", borderRadius: 3, background: C.bg, color: C.muted, border: `0.5px solid ${C.border}` }}>{t.timeframe}</span>
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                          <div style={{ width: 100, height: 4, borderRadius: 2, background: C.border }}>
+                            <div style={{ width: `${cv}%`, height: "100%", borderRadius: 2, background: ccCol(cv) }} />
+                          </div>
+                          <span style={{ fontFamily: mono, fontSize: 10, color: C.muted }}>conviction {cv}%</span>
+                          <span style={{ fontFamily: mono, fontSize: 10, padding: "2px 8px", borderRadius: 4, background: C.purple+"22", color: C.purple, border: `0.5px solid ${C.purple}44` }}>R:R {t.rrRatio || "—"}</span>
+                        </div>
+                        <div style={{ fontFamily: mono, fontSize: 11, color: C.muted, lineHeight: 1.6, marginBottom: 8 }}>{t.thesis}</div>
+                        <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 6 }}>
+                          {[["Entry",t.entryZone,C.green],["Stop",t.stopLoss,C.red],["T1",t.target1,C.chartBlue],["T2",t.target2,C.chartBlue]].map(([lbl,val,col]) => (
+                            <div key={lbl}><div style={{ fontSize: 9, fontFamily: mono, color: C.muted, textTransform: "uppercase", letterSpacing: "0.06em" }}>{lbl}</div><div style={{ fontSize: 12, fontWeight: 700, color: col }}>{val || "—"}</div></div>
+                          ))}
+                        </div>
+                        {t.catalyst && <div style={{ fontFamily: mono, fontSize: 10, color: C.muted }}>Catalyst: <span style={{ color: C.text }}>{t.catalyst}</span></div>}
+                      </div>
+                    </div>
+                    <div style={{ padding: "8px 16px 10px", background: C.bg, borderTop: `1px solid ${C.border}` }}>
+                      <div style={{ fontFamily: mono, fontSize: 10, color: C.muted, marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.06em" }}>How to place this trade</div>
+                      {rhSteps}
+                    </div>
+                    <div style={{ padding: "10px 16px 12px", borderTop: `1px solid ${C.border}` }}>
+                      <button onClick={() => askTradeCoach(i)} disabled={tradeCoachLoading === i} style={{ fontFamily: mono, fontSize: 11, padding: "5px 14px", borderRadius: 6, border: `0.5px solid ${C.purple}55`, background: C.purple+"22", color: C.purple, cursor: "pointer" }}>
+                        {tradeCoachLoading === i ? "⟳ Coach thinking..." : tradeCoach[i] ? "✦ Refresh Coach" : "✦ Coach — explain this to me"}
+                      </button>
+                      {tradeCoach[i] && (
+                        <div style={{ marginTop: 10, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 6, padding: "12px 14px" }}>
+                          {formatCoach(tradeCoach[i])}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+              <div style={{ fontFamily: mono, fontSize: 10, color: C.muted, lineHeight: 1.7, padding: "8px 0" }}>
+                For educational purposes only — not financial advice. Always use a stop loss. Verify price levels live before trading.
+              </div>
+            </div>
+          )}
+
+          {/* PATTERN LIBRARY */}
+          {patternTab === "library" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <div style={{ fontFamily: mono, fontSize: 11, color: C.muted, lineHeight: 1.7 }}>
+                Highest win-rate patterns on weekly/monthly candles. Signals only fire when all three confluence factors are confirmed.
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(130px,1fr))", gap: 8 }}>
+                {PATTERN_LIBRARY.map((p, i) => {
+                  const dirCol = p.dir === "bull" ? C.green : p.dir === "bear" ? C.red : C.chartBlue;
+                  return (
+                    <div key={i} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: "10px 12px", display: "flex", flexDirection: "column", alignItems: "center", gap: 6, cursor: "pointer", transition: "border-color 0.15s" }}
+                      onMouseEnter={e => e.currentTarget.style.borderColor = C.border}
+                      onMouseLeave={e => e.currentTarget.style.borderColor = C.border}>
+                      {candleSVG(p.name, 50, 54)}
+                      <div style={{ fontFamily: mono, fontSize: 10, color: C.text, textAlign: "center", lineHeight: 1.4 }}>{p.name}</div>
+                      <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                        <span style={{ fontFamily: mono, fontSize: 9, padding: "1px 6px", borderRadius: 3, background: dirCol+"18", color: dirCol }}>{p.dir === "bull" ? "Bullish" : p.dir === "bear" ? "Bearish" : "Both"}</span>
+                        <span style={{ fontFamily: mono, fontSize: 9, color: C.muted }}>~{p.wr}%</span>
+                      </div>
+                      <div style={{ fontFamily: mono, fontSize: 9, color: C.muted, textAlign: "center" }}>{p.tf}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // ── TIPS ──────────────────────────────────────────────────────────────
+    const TIPS = [
+      { label: "ETH/BTC Rotation",  body: "Trigger at 0.040. Current ~0.024 — not triggered. Wait for ratio + BTC dominance falling." },
+      { label: "Fear & Greed < 20", body: "Accumulation zone. Scale in BTC. Historical recoveries within 4–8 weeks." },
+      { label: "Fear & Greed > 75", body: "Start trimming. Move 20–30% to stablecoins. Don't sell all — momentum can persist." },
+      { label: "4+ Macro Red",      body: "Move majority to stablecoins. Re-enter when RRP rising + DXY falling + M2 expanding." },
+      { label: "RRP Near Zero",     body: "Liquidity tank empty. Next leg up needs M2 expansion + Fed pivot. Watch WALCL weekly." },
+      { label: "Global M2 Lag",     body: "BTC historically lags global M2 expansion by 10–12 weeks. M2 is a leading indicator." },
+      { label: "TGA Drawdown",      body: "Treasury spending down TGA = liquidity flowing into banking system = mild bullish." },
+      { label: "Crude Oil Spike",   body: "Energy spikes = inflation pressure = Fed stays hawkish = risk-off. Watch if WTI >$90." },
+    ];
+
+    // ── MAIN APP ──────────────────────────────────────────────────────────
     function App() {
       const [tab, setTab]             = useState("macro");
       const [scanning, setScanning]   = useState(false);
@@ -950,16 +1002,13 @@
       }, []);
 
       const flashCards = useCallback((keys) => {
-        const obj = {};
-        keys.forEach(k => obj[k] = true);
-        setFlash(obj);
+        const obj = {}; keys.forEach(k => obj[k] = true); setFlash(obj);
         setTimeout(() => setFlash({}), 2000);
       }, []);
 
       const runScan = useCallback(async () => {
         if (scanning) return;
-        setScanning(true);
-        setScanLog([]);
+        setScanning(true); setScanLog([]);
         addLog(true, "SCAN", "Fetching sheet CSV...");
         try {
           const res = await fetch(SHEET_CSV + `&cachebust=${Date.now()}`);
@@ -972,190 +1021,116 @@
               updates[k] = { ...parsed[k], signal: sigFn(parsed[k]) };
               keys.push(k);
               addLog(true, k, `${parsed[k].value}${parsed[k].unit ? " "+parsed[k].unit : ""} · ${parsed[k].updatedAt || "no ts"}${parsed[k].stale ? " ⚠ STALE" : ""}`);
-            } else {
-              addLog(false, k, "Key not found in sheet — check Apps Script ran");
-            }
+            } else { addLog(false, k, "Key not found in sheet"); }
           }
-          setData(updates);
-          flashCards(keys);
-          setLastScan(now());
+          setData(updates); flashCards(keys); setLastScan(now());
           addLog(true, "SCAN", `Complete — ${keys.length} metrics loaded ✓`);
-        } catch(e) {
-          addLog(false, "SCAN", `Sheet fetch failed — ${e.message}`);
-        }
+        } catch(e) { addLog(false, "SCAN", `Sheet fetch failed — ${e.message}`); }
 
-        // Fetch catalyst headlines from Catalysts tab
         try {
           addLog(true, "NEWS", "Fetching headlines...");
           const r2 = await fetch(CATALYST_CSV + `&cachebust=${Date.now()}`);
           if (!r2.ok) throw new Error(`HTTP ${r2.status}`);
           const t2 = await r2.text();
           const rows = t2.trim().split("\n").slice(1).map(line => {
-            const cols = [];
-            let cur = "", inQ = false;
-            for (const ch of line) {
-              if (ch === '"') { inQ = !inQ; }
-              else if (ch === ',' && !inQ) { cols.push(cur.trim()); cur = ""; }
-              else cur += ch;
-            }
+            const cols = []; let cur = "", inQ = false;
+            for (const ch of line) { if (ch === '"') { inQ = !inQ; } else if (ch === ',' && !inQ) { cols.push(cur.trim()); cur = ""; } else cur += ch; }
             cols.push(cur.trim());
             return { title: cols[0], url: cols[1], source: cols[2], pubDate: cols[3], topic: cols[4] };
           }).filter(r => r.title && r.title.length > 5);
-          setCatalysts(rows);
-          setAiSummary(null);
+          setCatalysts(rows); setAiSummary(null);
           addLog(true, "NEWS", `${rows.length} headlines loaded ✓`);
-        } catch(e) {
-          addLog(false, "NEWS", `Headlines fetch failed — ${e.message}`);
-        }
+        } catch(e) { addLog(false, "NEWS", `Headlines fetch failed — ${e.message}`); }
 
         setScanning(false);
       }, [scanning, addLog, flashCards]);
 
       const interpretCatalysts = useCallback(async () => {
         if (aiLoading || catalysts.length === 0) return;
-        setAiLoading(true);
-        setAiSummary(null);
+        setAiLoading(true); setAiSummary(null);
         try {
-          const headlines = catalysts.map((c, i) =>
-            `${i+1}. [${(c.topic||"news").toUpperCase()}] ${c.title} (${c.source})`
-          ).join("\n");
-
-          const ctx = [
-            data.y10      ? `10Y: ${data.y10.value}`       : null,
-            data.y2       ? `2Y: ${data.y2.value}`         : null,
-            data.spread   ? `Spread: ${data.spread.value}` : null,
-            data.dxy      ? `DXY: ${data.dxy.value}`       : null,
-            data.vix      ? `VIX: ${data.vix.value}`       : null,
-            data.cpi      ? `CPI: ${data.cpi.value}`       : null,
-            data.ism      ? `ISM: ${data.ism.value}`       : null,
-            data.btc      ? `BTC: ${data.btc.value}`       : null,
-            data.dom      ? `BTC Dom: ${data.dom.value}`   : null,
-            data.fg       ? `Fear/Greed: ${data.fg.value}` : null,
-            data.funding  ? `Funding: ${data.funding.value}`: null,
-          ].filter(Boolean).join(" · ");
-
-          const prompt = `You are a macro and crypto markets analyst. Current live indicators: ${ctx}
-
-Today's top headlines:
-${headlines}
-
-Write a concise 5-bullet analyst briefing:
-• Dominant macro theme and what it means for risk assets
-• Direct Bitcoin/crypto implication from the news
-• Key level or data point to watch this week
-• Regime signal: risk-on / risk-off / mixed — and why
-• One actionable takeaway for a BTC/ETH/SUI portfolio
-
-Be specific. Reference actual numbers from the indicators and headlines. No generic statements. Max 2 sentences per bullet.`;
-
-          const response = await fetch("https://api.anthropic.com/v1/messages", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              model: "claude-sonnet-4-20250514",
-              max_tokens: 800,
-              messages: [{ role: "user", content: prompt }]
-            })
-          });
+          const headlines = catalysts.map((c, i) => `${i+1}. [${(c.topic||"news").toUpperCase()}] ${c.title} (${c.source})`).join("\n");
+          const ctx = [data.y10,data.y2,data.spread,data.dxy,data.vix,data.cpi,data.ism,data.btc,data.dom,data.fg,data.funding].map((d,i) => { const keys=["y10","y2","spread","dxy","vix","cpi","ism","btc","dom","fg","funding"]; return d ? `${keys[i]}: ${d.value}` : null; }).filter(Boolean).join(" · ");
+          const prompt = `You are a macro and crypto markets analyst. Live indicators: ${ctx}\n\nToday's top headlines:\n${headlines}\n\nWrite a concise 5-bullet analyst briefing:\n• Dominant macro theme and what it means for risk assets\n• Direct Bitcoin/crypto implication from the news\n• Key level or data point to watch this week\n• Regime signal: risk-on / risk-off / mixed — and why\n• One actionable takeaway for a BTC/ETH/SUI portfolio\n\nBe specific. Reference actual numbers. No generic statements. Max 2 sentences per bullet.`;
+          const response = await fetch("https://api.anthropic.com/v1/messages", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ model:"claude-sonnet-4-20250514", max_tokens:800, messages:[{role:"user",content:prompt}] }) });
           const d2 = await response.json();
           if (d2.error) throw new Error(d2.error.message);
-          const txt = (d2.content || []).filter(b => b.type === "text").map(b => b.text).join("\n").trim();
+          const txt = (d2.content||[]).filter(b=>b.type==="text").map(b=>b.text).join("\n").trim();
           setAiSummary(txt || "No summary returned.");
-        } catch(e) {
-          setAiSummary("⚠ Interpret failed: " + e.message + "\n\nNote: The ✦ INTERPRET button calls the Anthropic API directly from your browser. This requires the API to accept requests without an API key header — which only works inside Claude.ai Artifacts. For local use, see the server-side AI summary option (generateAISummary in Apps Script).");
-        }
+        } catch(e) { setAiSummary("⚠ Interpret failed: " + e.message); }
         setAiLoading(false);
       }, [aiLoading, catalysts, data]);
 
       const d = data;
-      // Signal bar uses macro indicators only — crypto/trading excluded
-      const MACRO_SIGNAL_KEYS = new Set([
-        "dxy","vix","m2","walcl","wti","natgas","y10","y2","fedfunds","cpi","spread","ism"
-      ]);
-      const signals = Object.fromEntries(
-        Object.entries(d)
-          .filter(([k]) => MACRO_SIGNAL_KEYS.has(k))
-          .map(([k, v]) => [k, v?.signal])
-      );
+      const MACRO_SIGNAL_KEYS = new Set(["dxy","vix","m2","walcl","wti","natgas","y10","y2","fedfunds","cpi","spread","ism"]);
+      const signals = Object.fromEntries(Object.entries(d).filter(([k]) => MACRO_SIGNAL_KEYS.has(k)).map(([k,v]) => [k, v?.signal]));
       const grid = { display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(190px,1fr))", gap: 12 };
 
-      // ── Yield Curve derived signal ────────────────────────────────────
       const spreadNum   = parseFloat(d.spread?.value);
       const spreadColor = spreadSignalColor(d.spread?.value);
-
-      // ── VIX derived signal ────────────────────────────────────────────
       const vixZoneData = vixZone(d.vix?.value);
-
-      // ── ISM PMI derived signal ────────────────────────────────────────
       const ismZoneData = ismZone(d.ism?.value, d.ism?.change);
-      const spreadLabel = !d.spread?.value ? null
-        : isNaN(spreadNum) ? null
-        : spreadNum < 0   ? `▼ ${spreadNum.toFixed(2)}% — Inverted`
-        : spreadNum < 0.5 ? `► ${spreadNum.toFixed(2)}% — Flat`
-        :                   `▲ ${spreadNum.toFixed(2)}% — Normal`;
-
-      // ── Fed Funds derived signal ──────────────────────────────────────
-      const ffChange = d.fedfunds?.change;
-      const ffColor  = fedfundsSignalColor(ffChange);
-      const ffLabel  = ffChange == null ? null
-        : ffChange > 0 ? `▲ +${ffChange.toFixed(2)}% — Hike (bear)`
-        : ffChange < 0 ? `▼ ${ffChange.toFixed(2)}% — Cut (bull)`
-        :                `► Unchanged`;
-
-      // ── BTC Dominance derived signal ──────────────────────────────────
+      const spreadLabel = !d.spread?.value ? null : isNaN(spreadNum) ? null : spreadNum < 0 ? `▼ ${spreadNum.toFixed(2)}% — Inverted` : spreadNum < 0.5 ? `► ${spreadNum.toFixed(2)}% — Flat` : `▲ ${spreadNum.toFixed(2)}% — Normal`;
+      const ffChange    = d.fedfunds?.change;
+      const ffColor     = fedfundsSignalColor(ffChange);
+      const ffLabel     = ffChange == null ? null : ffChange > 0 ? `▲ +${ffChange.toFixed(2)}% — Hike (bear)` : ffChange < 0 ? `▼ ${ffChange.toFixed(2)}% — Cut (bull)` : `► Unchanged`;
       const domZoneData = domZone(d.dom?.value);
-
-      // ── Funding Rate derived signal ───────────────────────────────────
       const fundingZoneData = fundingZone(d.funding?.value);
-
-      // ── Open Interest derived signal (Price × OI matrix) ─────────────
-      const oiZoneData = oiZone(d.oi?.value, d.oi?.change, d.btc?.change);
-
-      // ── Stablecoin Volume derived signal ──────────────────────────────
+      const oiZoneData  = oiZone(d.oi?.value, d.oi?.change, d.btc?.change);
       const stabvolZoneData = stabvolZone(d.stabvol?.value, d.stabvol?.change);
-
-      // ── Net Liquidity = WALCL − TGA − RRP ────────────────────────────
-      // WALCL: stored as "6.65T" → convert to $B = 6650
-      // TGA:   stored as "$838.2B" → strip $ = 838.2
-      // RRP:   stored as "0.43" with unit "B" → 0.43
-      const toB = v => {
-        if (!v) return null;
-        const s = String(v);
-        const n = parseFloat(s.replace(/[^0-9.]/g, ""));
-        if (isNaN(n)) return null;
-        if (s.includes("T")) return n * 1000;  // trillions → billions
-        return n;                               // already in billions
-      };
-      const walclB   = toB(d.walcl?.value);   // e.g. 6650
-      const tgaB     = toB(d.tga?.value);     // e.g. 838.2
-      const rrpB     = toB(d.rrp?.value);     // e.g. 0.43
-      const netliqB  = (walclB != null && tgaB != null && rrpB != null)
-        ? +(walclB - tgaB - rrpB).toFixed(1) : null;
+      const toB = v => { if (!v) return null; const s = String(v), n = parseFloat(s.replace(/[^0-9.]/g,"")); if (isNaN(n)) return null; return s.includes("T") ? n*1000 : n; };
+      const walclB = toB(d.walcl?.value), tgaB = toB(d.tga?.value), rrpB = toB(d.rrp?.value);
+      const netliqB  = (walclB != null && tgaB != null && rrpB != null) ? +(walclB - tgaB - rrpB).toFixed(1) : null;
       const netliqVal = netliqB != null ? "$" + (netliqB / 1000).toFixed(2) + "T" : null;
-      // % change: WALCL raw change is in $M, convert to % of WALCL value
-      // WALCL change is now stored as % — use directly for netliq signal
-      const netliqChg  = d.walcl?.change != null ? parseFloat(d.walcl.change) : null;
+      const netliqChg = d.walcl?.change != null ? parseFloat(d.walcl.change) : null;
       const netliqZoneData = netliqZone(netliqVal, netliqChg);
+
+      const price    = parseFloat(d.sui?.value);
+      const pp       = parseFloat(d.sui_pp?.value);
+      const r1       = parseFloat(d.sui_r1?.value);
+      const r2       = parseFloat(d.sui_r2?.value);
+      const s1       = parseFloat(d.sui_s1?.value);
+      const s2       = parseFloat(d.sui_s2?.value);
+      const wh       = parseFloat(d.sui_wh?.value);
+      const wl       = parseFloat(d.sui_wl?.value);
+      const mh       = parseFloat(d.sui_mh?.value);
+      const ml       = parseFloat(d.sui_ml?.value);
+      const suiHigh  = parseFloat(d.sui_high?.value);
+      const suiLow   = parseFloat(d.sui_low?.value);
+      const btcPrice = parseFloat(String(d.btc?.value || "").replace(/[^0-9.]/g,""));
+      const btcHigh  = parseFloat(d.btc_high?.value);
+      const btcLow   = parseFloat(d.btc_low?.value);
+      const btcPP    = parseFloat(d.btc_pp?.value);
+      const btcR1    = parseFloat(d.btc_r1?.value);
+      const btcR2    = parseFloat(d.btc_r2?.value);
+      const btcS1    = parseFloat(d.btc_s1?.value);
+      const btcS2    = parseFloat(d.btc_s2?.value);
+      const btcWH    = parseFloat(d.btc_wh?.value);
+      const btcWL    = parseFloat(d.btc_wl?.value);
+      const btcMH    = parseFloat(d.btc_mh?.value);
+      const btcML    = parseFloat(d.btc_ml?.value);
+
+      const suiFundingZone = fundingZone(d.sui_funding?.value);
+      const suiOIZone = oiZone(d.sui_oi?.value, d.sui_oi?.change, d.sui?.change);
+      const rangeMin = isNaN(ml) ? 0 : ml, rangeMax = isNaN(mh) ? 0 : mh;
+      const rangePct = (rangeMax > rangeMin && !isNaN(price)) ? Math.min(100, Math.max(0, ((price - rangeMin) / (rangeMax - rangeMin)) * 100)) : null;
+      const lvlPct = v => (!isNaN(v) && rangeMax > rangeMin) ? Math.min(100, Math.max(0, ((v - rangeMin) / (rangeMax - rangeMin)) * 100)) : null;
+      const priceZone = (!isNaN(price) && !isNaN(pp)) ? (price > r1 ? { label:"Above R1 — Bullish breakout",color:C.green} : price > pp ? {label:"Above PP — Bullish bias",color:C.chartBlue} : price > s1 ? {label:"Below PP — Bearish bias",color:C.amber} : {label:"Below S1 — Weak",color:C.red}) : null;
+
+      const TABS = ["macro","crypto","trading","patterns","catalysts","tips"];
 
       return (
         <div style={{ background: C.bg, minHeight: "100vh", paddingBottom: 40 }}>
           {/* Header */}
-          <div style={{ background: C.surface, borderBottom: `1px solid ${C.border}`,
-            padding: "14px 24px", display: "flex", alignItems: "center",
-            justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+          <div style={{ background: C.surface, borderBottom: `1px solid ${C.border}`, padding: "14px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
               <div style={{ width: 8, height: 8, borderRadius: "50%", background: C.accent, boxShadow: `0 0 8px ${C.accent}` }} />
               <span style={{ fontFamily: sans, fontWeight: 700, fontSize: 17, letterSpacing: "-0.3px" }}>MACRO RADAR</span>
-              <span style={{ fontFamily: mono, fontSize: 10, color: C.muted,
-                background: C.bg, border: `1px solid ${C.border}`, borderRadius: 4, padding: "2px 8px" }}>v2.5</span>
+              <span style={{ fontFamily: mono, fontSize: 10, color: C.muted, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 4, padding: "2px 8px" }}>v3.0</span>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
               {lastScan && <span style={{ fontFamily: mono, fontSize: 11, color: C.muted }}>Last scan: {lastScan}</span>}
-              <button onClick={runScan} disabled={scanning}
-                style={{ background: scanning ? C.border : C.blue, color: "#0d1117",
-                  fontFamily: mono, fontWeight: 700, fontSize: 12, border: "none",
-                  borderRadius: 6, padding: "8px 20px", letterSpacing: "0.05em",
-                  transition: "all 0.2s", opacity: scanning ? 0.7 : 1 }}>
+              <button onClick={runScan} disabled={scanning} style={{ background: scanning ? C.border : C.blue, color: "#0d1117", fontFamily: mono, fontWeight: 700, fontSize: 12, border: "none", borderRadius: 6, padding: "8px 20px", letterSpacing: "0.05em", transition: "all 0.2s", opacity: scanning ? 0.7 : 1 }}>
                 {scanning ? "⟳ SCANNING..." : "⚡ LIVE SCAN"}
               </button>
             </div>
@@ -1166,774 +1141,235 @@ Be specific. Reference actual numbers from the indicators and headlines. No gene
             {scanLog.length > 0 && <div style={{ marginBottom: 16 }}><ScanLog log={scanLog} /></div>}
 
             {/* Tabs */}
-            <div style={{ display: "flex", gap: 2, marginBottom: 20, borderBottom: `1px solid ${C.border}` }}>
-              {["macro","crypto","trading","catalysts","tips"].map(t => (
+            <div style={{ display: "flex", gap: 2, marginBottom: 20, borderBottom: `1px solid ${C.border}`, overflowX: "auto" }}>
+              {TABS.map(t => (
                 <button key={t} onClick={() => setTab(t)}
-                  style={{ fontFamily: mono, fontSize: 12, textTransform: "uppercase", letterSpacing: "0.08em",
-                    padding: "10px 20px", border: "none", borderRadius: "6px 6px 0 0",
-                    background: tab === t ? C.surface : "transparent",
-                    color: tab === t ? C.text : C.muted,
-                    borderBottom: tab === t ? `2px solid ${C.blue}` : "2px solid transparent",
-                    transition: "all 0.15s" }}>{t}</button>
+                  style={{ fontFamily: mono, fontSize: 12, textTransform: "uppercase", letterSpacing: "0.08em", padding: "10px 18px", border: "none", borderRadius: "6px 6px 0 0", background: tab === t ? C.surface : "transparent", color: tab === t ? C.text : C.muted, borderBottom: tab === t ? `2px solid ${t === "patterns" ? C.purple : C.blue}` : "2px solid transparent", transition: "all 0.15s", whiteSpace: "nowrap" }}>{t}</button>
               ))}
             </div>
 
-            {/* MACRO */}
+            {/* ── MACRO ── */}
             {tab === "macro" && (
               <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-                <div>
-                  <SectionLabel>Rates & Yields</SectionLabel>
+                <div><SectionLabel>Rates & Yields</SectionLabel>
                   <div style={grid}>
-                    <MetricCard label="DXY"
-                      value={d.dxy?.value}        change={d.dxy?.change}
-                      source={d.dxy?.source}      updatedAt={d.dxy?.updatedAt}
-                      stale={!d.dxy}              flash={flash.dxy}
-                      invertSignal                subtext="↓ Falling = risk-on" />
-                    <MetricCard label="VIX"
-                      value={d.vix?.value}
-                      source={d.vix?.source}      updatedAt={d.vix?.updatedAt}
-                      stale={!d.vix}              flash={flash.vix}
-                      signalColor={vixZoneData.color}
-                      changeLabel={d.vix?.value != null ? vixZoneData.label : null}
-                      subtext={vixZoneData.subtext} />
-                    <MetricCard label="10Y Yield"
-                      value={d.y10?.value}        change={d.y10?.change}
-                      source={d.y10?.source}      updatedAt={d.y10?.updatedAt}
-                      stale={!d.y10}              flash={flash.y10}
-                      invertSignal                unit={d.y10?.unit} />
-                    <MetricCard label="2Y Yield"
-                      value={d.y2?.value}         change={d.y2?.change}
-                      source={d.y2?.source}       updatedAt={d.y2?.updatedAt}
-                      stale={!d.y2}              flash={flash.y2}
-                      invertSignal                unit={d.y2?.unit} />
-                    <MetricCard label="Yield Curve"
-                      value={d.spread?.value}
-                      source={d.spread?.source}   updatedAt={d.spread?.updatedAt}
-                      stale={!d.spread}           flash={flash.spread}
-                      unit={d.spread?.unit}
-                      signalColor={spreadColor}
-                      changeLabel={spreadLabel}
-                      subtext="10Y−2Y · red = inverted" />
-                    <MetricCard label="Fed Funds Rate"
-                      value={d.fedfunds?.value}   change={d.fedfunds?.change}
-                      source={d.fedfunds?.source} updatedAt={d.fedfunds?.updatedAt}
-                      stale={!d.fedfunds}         flash={flash.fedfunds}
-                      unit={d.fedfunds?.unit}
-                      signalColor={ffColor}
-                      changeLabel={ffLabel}
-                      subtext="↑ Hike = bear · ↓ Cut = bull" />
+                    <MetricCard label="DXY" value={d.dxy?.value} change={d.dxy?.change} source={d.dxy?.source} updatedAt={d.dxy?.updatedAt} stale={!d.dxy} flash={flash.dxy} invertSignal subtext="↓ Falling = risk-on" />
+                    <MetricCard label="VIX" value={d.vix?.value} source={d.vix?.source} updatedAt={d.vix?.updatedAt} stale={!d.vix} flash={flash.vix} signalColor={vixZoneData.color} changeLabel={d.vix?.value != null ? vixZoneData.label : null} subtext={vixZoneData.subtext} />
+                    <MetricCard label="10Y Yield" value={d.y10?.value} change={d.y10?.change} source={d.y10?.source} updatedAt={d.y10?.updatedAt} stale={!d.y10} flash={flash.y10} invertSignal unit={d.y10?.unit} />
+                    <MetricCard label="2Y Yield" value={d.y2?.value} change={d.y2?.change} source={d.y2?.source} updatedAt={d.y2?.updatedAt} stale={!d.y2} flash={flash.y2} invertSignal unit={d.y2?.unit} />
+                    <MetricCard label="Yield Curve" value={d.spread?.value} source={d.spread?.source} updatedAt={d.spread?.updatedAt} stale={!d.spread} flash={flash.spread} unit={d.spread?.unit} signalColor={spreadColor} changeLabel={spreadLabel} subtext="10Y−2Y · red = inverted" />
+                    <MetricCard label="Fed Funds Rate" value={d.fedfunds?.value} change={d.fedfunds?.change} source={d.fedfunds?.source} updatedAt={d.fedfunds?.updatedAt} stale={!d.fedfunds} flash={flash.fedfunds} unit={d.fedfunds?.unit} signalColor={ffColor} changeLabel={ffLabel} subtext="↑ Hike = bear · ↓ Cut = bull" />
                   </div>
                 </div>
-                <div>
-                  <SectionLabel>Liquidity Flows</SectionLabel>
+                <div><SectionLabel>Liquidity Flows</SectionLabel>
                   <div style={grid}>
-                    <MetricCard label="Net Liquidity"
-                      value={netliqVal}
-                      source="WALCL−TGA−RRP"  updatedAt={d.walcl?.updatedAt}
-                      stale={!d.walcl}
-                      signalColor={netliqZoneData.color}
-                      changeLabel={netliqVal != null ? netliqZoneData.label : null}
-                      subtext={netliqZoneData.subtext} />
-                    <MetricCard label="Fed Balance Sheet"
-                      value={d.walcl?.value}      change={d.walcl?.change}
-                      source={d.walcl?.source}    updatedAt={d.walcl?.updatedAt}
-                      stale={!d.walcl}            flash={flash.walcl}
-                      unit={d.walcl?.unit}        subtext="↑ Expanding = QE signal" />
-                    <MetricCard label="M2 Money Supply"
-                      value={d.m2?.value}         change={d.m2?.change}
-                      source={d.m2?.source}       updatedAt={d.m2?.updatedAt}
-                      stale={!d.m2}              flash={flash.m2}
-                      unit={d.m2?.unit}           subtext="BTC lags M2 ~10–12w" />
+                    <MetricCard label="Net Liquidity" value={netliqVal} source="WALCL−TGA−RRP" updatedAt={d.walcl?.updatedAt} stale={!d.walcl} signalColor={netliqZoneData.color} changeLabel={netliqVal != null ? netliqZoneData.label : null} subtext={netliqZoneData.subtext} />
+                    <MetricCard label="Fed Balance Sheet" value={d.walcl?.value} change={d.walcl?.change} source={d.walcl?.source} updatedAt={d.walcl?.updatedAt} stale={!d.walcl} flash={flash.walcl} unit={d.walcl?.unit} subtext="↑ Expanding = QE signal" />
+                    <MetricCard label="M2 Money Supply" value={d.m2?.value} change={d.m2?.change} source={d.m2?.source} updatedAt={d.m2?.updatedAt} stale={!d.m2} flash={flash.m2} unit={d.m2?.unit} subtext="BTC lags M2 ~10–12w" />
                   </div>
                 </div>
-                <div>
-                  <SectionLabel>Economic Activity</SectionLabel>
+                <div><SectionLabel>Economic Activity</SectionLabel>
                   <div style={grid}>
-                    <MetricCard label="ISM Manufacturing PMI"
-                      value={d.ism?.value}
-                      source={d.ism?.source}      updatedAt={d.ism?.updatedAt}
-                      stale={!d.ism}              flash={flash.ism}
-                      signalColor={ismZoneData.color}
-                      changeLabel={d.ism?.value != null ? ismZoneData.label : null}
-                      subtext={ismZoneData.subtext} />
+                    <MetricCard label="ISM Manufacturing PMI" value={d.ism?.value} source={d.ism?.source} updatedAt={d.ism?.updatedAt} stale={!d.ism} flash={flash.ism} signalColor={ismZoneData.color} changeLabel={d.ism?.value != null ? ismZoneData.label : null} subtext={ismZoneData.subtext} />
                   </div>
                 </div>
-                <div>
-                  <SectionLabel>Energy & Inflation</SectionLabel>
+                <div><SectionLabel>Energy & Inflation</SectionLabel>
                   <div style={grid}>
-                    <MetricCard label="WTI Crude Oil"
-                      value={d.wti?.value}        change={d.wti?.change}
-                      source={d.wti?.source}      updatedAt={d.wti?.updatedAt}
-                      stale={!d.wti}              flash={flash.wti}
-                      invertSignal                subtext=">$90 = risk-off watch" />
-                    <MetricCard label="Natural Gas"
-                      value={d.natgas?.value}     change={d.natgas?.change}
-                      source={d.natgas?.source}   updatedAt={d.natgas?.updatedAt}
-                      stale={!d.natgas}           flash={flash.natgas}
-                      invertSignal />
-                    <MetricCard label="CPI"
-                      value={d.cpi?.value}        change={d.cpi?.change}
-                      source={d.cpi?.source}      updatedAt={d.cpi?.updatedAt}
-                      stale={!d.cpi}              flash={flash.cpi}
-                      invertSignal                unit={d.cpi?.unit}
-                      subtext="YoY — lower = risk-on" />
+                    <MetricCard label="WTI Crude Oil" value={d.wti?.value} change={d.wti?.change} source={d.wti?.source} updatedAt={d.wti?.updatedAt} stale={!d.wti} flash={flash.wti} invertSignal subtext=">$90 = risk-off watch" />
+                    <MetricCard label="Natural Gas" value={d.natgas?.value} change={d.natgas?.change} source={d.natgas?.source} updatedAt={d.natgas?.updatedAt} stale={!d.natgas} flash={flash.natgas} invertSignal />
+                    <MetricCard label="CPI" value={d.cpi?.value} change={d.cpi?.change} source={d.cpi?.source} updatedAt={d.cpi?.updatedAt} stale={!d.cpi} flash={flash.cpi} invertSignal unit={d.cpi?.unit} subtext="YoY — lower = risk-on" />
                   </div>
                 </div>
-
-                {/* ── Liquidity vs BTC Chart ── */}
                 <LiquidityChart />
-
               </div>
             )}
 
-            {/* CRYPTO */}
+            {/* ── CRYPTO ── */}
             {tab === "crypto" && (
               <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-                <div>
-                  <SectionLabel>Prices</SectionLabel>
+                <div><SectionLabel>Prices</SectionLabel>
                   <div style={grid}>
-                    <MetricCard label="BTC / USD"
-                      value={d.btc?.value}        change={d.btc?.change}
-                      source={d.btc?.source}      updatedAt={d.btc?.updatedAt}
-                      stale={!d.btc}              flash={flash.btc} />
-                    <MetricCard label="ETH / USD"
-                      value={d.eth?.value}        change={d.eth?.change}
-                      source={d.eth?.source}      updatedAt={d.eth?.updatedAt}
-                      stale={!d.eth}              flash={flash.eth} />
-                    <MetricCard label="Funding Rate"
-                      value={d.funding?.value}
-                      source={d.funding?.source}  updatedAt={d.funding?.updatedAt}
-                      stale={!d.funding}          flash={flash.funding}
-                      unit="%"
-                      signalColor={fundingZoneData.color}
-                      changeLabel={d.funding?.value != null ? fundingZoneData.label : null}
-                      subtext={fundingZoneData.subtext} />
-                    <MetricCard label="Open Interest"
-                      value={d.oi?.value}
-                      source={d.oi?.source}       updatedAt={d.oi?.updatedAt}
-                      stale={!d.oi}               flash={flash.oi}
-                      signalColor={oiZoneData.color}
-                      changeLabel={d.oi?.value != null ? oiZoneData.label : null}
-                      subtext={oiZoneData.subtext} />
-                    <MetricCard label="Stablecoin Volume"
-                      value={d.stabvol?.value}
-                      source={d.stabvol?.source}  updatedAt={d.stabvol?.updatedAt}
-                      stale={!d.stabvol}          flash={flash.stabvol}
-                      signalColor={stabvolZoneData.color}
-                      changeLabel={d.stabvol?.value != null ? stabvolZoneData.label : null}
-                      subtext={stabvolZoneData.subtext} />
+                    <MetricCard label="BTC / USD" value={d.btc?.value} change={d.btc?.change} source={d.btc?.source} updatedAt={d.btc?.updatedAt} stale={!d.btc} flash={flash.btc} />
+                    <MetricCard label="ETH / USD" value={d.eth?.value} change={d.eth?.change} source={d.eth?.source} updatedAt={d.eth?.updatedAt} stale={!d.eth} flash={flash.eth} />
+                    <MetricCard label="Funding Rate" value={d.funding?.value} source={d.funding?.source} updatedAt={d.funding?.updatedAt} stale={!d.funding} flash={flash.funding} unit="%" signalColor={fundingZoneData.color} changeLabel={d.funding?.value != null ? fundingZoneData.label : null} subtext={fundingZoneData.subtext} />
+                    <MetricCard label="Open Interest" value={d.oi?.value} source={d.oi?.source} updatedAt={d.oi?.updatedAt} stale={!d.oi} flash={flash.oi} signalColor={oiZoneData.color} changeLabel={d.oi?.value != null ? oiZoneData.label : null} subtext={oiZoneData.subtext} />
+                    <MetricCard label="Stablecoin Volume" value={d.stabvol?.value} source={d.stabvol?.source} updatedAt={d.stabvol?.updatedAt} stale={!d.stabvol} flash={flash.stabvol} signalColor={stabvolZoneData.color} changeLabel={d.stabvol?.value != null ? stabvolZoneData.label : null} subtext={stabvolZoneData.subtext} />
                   </div>
                 </div>
-
-                {/* ── BTC Dominance — expanded card with zone bar ── */}
                 <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: "16px 20px" }}>
                   <SectionLabel>BTC Dominance</SectionLabel>
                   <div style={{ display: "flex", alignItems: "flex-start", gap: 24, flexWrap: "wrap" }}>
                     <div>
                       <div style={{ fontFamily: mono, fontSize: 11, color: C.muted, marginBottom: 4 }}>Current</div>
-                      <div style={{ fontFamily: sans, fontSize: 36, fontWeight: 700, color: domZoneData.color }}>
-                        {d.dom?.value ? parseFloat(d.dom.value).toFixed(2) : "—"}
-                        <span style={{ fontSize: 18, marginLeft: 4 }}>%</span>
-                      </div>
-                      <div style={{ fontFamily: mono, fontSize: 12, color: domZoneData.color, marginTop: 4 }}>
-                        {domZoneData.label}
-                      </div>
-                      <div style={{ fontFamily: mono, fontSize: 10, color: C.muted, marginTop: 2 }}>
-                        {d.dom?.source || "—"} · {d.dom?.updatedAt || "not fetched"}
-                      </div>
+                      <div style={{ fontFamily: sans, fontSize: 36, fontWeight: 700, color: domZoneData.color }}>{d.dom?.value ? parseFloat(d.dom.value).toFixed(2) : "—"}<span style={{ fontSize: 18, marginLeft: 4 }}>%</span></div>
+                      <div style={{ fontFamily: mono, fontSize: 12, color: domZoneData.color, marginTop: 4 }}>{domZoneData.label}</div>
+                      <div style={{ fontFamily: mono, fontSize: 10, color: C.muted, marginTop: 2 }}>{d.dom?.source || "—"} · {d.dom?.updatedAt || "not fetched"}</div>
                     </div>
                     <div style={{ flex: 1, minWidth: 220, paddingTop: 4 }}>
                       <DomZoneBar value={d.dom?.value} />
-                      <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 5 }}>
-                        {[
-                          { range: ">60%",   color: C.blue,      desc: "BTC Phase — hold BTC, avoid alts" },
-                          { range: "55–60%", color: C.amber,     desc: "Rotation starting → ETH/SOL/SUI" },
-                          { range: "50–55%", color: C.chartBlue, desc: "Altseason approaching" },
-                          { range: "40–50%", color: C.green,     desc: "Confirmed altseason — optimal zone" },
-                          { range: "<40%",   color: C.red,       desc: "⚠ Euphoria — market top risk" },
-                        ].map(z => {
-                          const v = parseFloat(d.dom?.value);
-                          const active = !isNaN(v) && (
-                            (z.range === ">60%"   && v >= 60) ||
-                            (z.range === "55–60%" && v >= 55 && v < 60) ||
-                            (z.range === "50–55%" && v >= 50 && v < 55) ||
-                            (z.range === "40–50%" && v >= 40 && v < 50) ||
-                            (z.range === "<40%"   && v < 40)
-                          );
-                          return (
-                            <div key={z.range} style={{ display: "flex", gap: 10, alignItems: "center",
-                              background: active ? z.color + "18" : "transparent",
-                              borderRadius: 4, padding: "3px 8px" }}>
-                              <span style={{ fontFamily: mono, fontSize: 10, color: z.color, minWidth: 46, fontWeight: active ? 700 : 400 }}>{z.range}</span>
-                              <span style={{ fontFamily: mono, fontSize: 10, color: active ? C.text : C.muted }}>{z.desc}</span>
-                            </div>
-                          );
-                        })}
-                      </div>
                     </div>
                   </div>
                 </div>
-
-                {/* ETH/BTC */}
                 <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: "16px 20px" }}>
                   <SectionLabel>ETH / BTC Rotation Tracker</SectionLabel>
                   <div style={{ display: "flex", alignItems: "flex-start", gap: 24, flexWrap: "wrap" }}>
                     <div>
                       <div style={{ fontFamily: mono, fontSize: 11, color: C.muted, marginBottom: 4 }}>Current Ratio</div>
-                      <div style={{ fontFamily: sans, fontSize: 36, fontWeight: 700,
-                        color: parseFloat(d.ethbtc?.value) >= 0.040 ? C.green : C.text }}>
-                        {d.ethbtc?.value || "—"}
-                      </div>
-                      <div style={{ fontFamily: mono, fontSize: 10, color: C.muted, marginTop: 2 }}>
-                        {d.ethbtc?.source || "Sheet"} · {d.ethbtc?.updatedAt || "not fetched"}
-                      </div>
+                      <div style={{ fontFamily: sans, fontSize: 36, fontWeight: 700, color: parseFloat(d.ethbtc?.value) >= 0.040 ? C.green : C.text }}>{d.ethbtc?.value || "—"}</div>
+                      <div style={{ fontFamily: mono, fontSize: 10, color: C.muted, marginTop: 2 }}>{d.ethbtc?.source || "Sheet"} · {d.ethbtc?.updatedAt || "not fetched"}</div>
                     </div>
                     <div style={{ flex: 1, minWidth: 200, paddingTop: 4 }}>
                       <ETHBTCBar ratio={parseFloat(d.ethbtc?.value)} />
-                      <div style={{ marginTop: 12, fontFamily: mono, fontSize: 11, color: C.muted, lineHeight: 1.7 }}>
-                        <div>Trigger: <span style={{ color: C.amber }}>0.040</span></div>
-                        <div>Status: {!d.ethbtc?.value ? "—"
-                          : parseFloat(d.ethbtc.value) >= 0.040
-                            ? <span style={{ color: C.green }}>🟢 TRIGGERED — consider rotation</span>
-                            : <span style={{ color: C.muted }}>⬜ Not triggered — hold BTC</span>}
-                        </div>
-                        <div style={{ fontSize: 10, color: C.muted+"99", marginTop: 4 }}>
-                          Also require: BTC dominance falling + macro green
-                        </div>
-                      </div>
                     </div>
                   </div>
                 </div>
-
-                {/* Fear & Greed */}
                 <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: "16px 20px" }}>
                   <SectionLabel>Sentiment</SectionLabel>
                   <div style={{ display: "flex", gap: 32, flexWrap: "wrap", alignItems: "flex-start" }}>
                     <div>
                       <div style={{ fontFamily: mono, fontSize: 11, color: C.muted, marginBottom: 8 }}>Fear & Greed Index</div>
                       <FearGauge value={d.fg?.value != null ? parseFloat(d.fg.value) : null} />
-                      <div style={{ fontFamily: mono, fontSize: 10, color: C.muted, marginTop: 8, textAlign: "center" }}>
-                        {d.fg?.updatedAt ? `${d.fg.source} · ${d.fg.updatedAt}` : "Run scan to fetch"}
-                      </div>
-                    </div>
-                    <div style={{ flex: 1, minWidth: 220, display: "flex", flexDirection: "column", gap: 6, paddingTop: 4 }}>
-                      {[
-                        { range: "< 20",  label: "Extreme Fear",  action: "Accumulate BTC — scale in", color: C.green },
-                        { range: "20–40", label: "Fear",          action: "Hold / small buys on dips", color: C.chartBlue },
-                        { range: "40–60", label: "Neutral",       action: "Monitor — no edge",          color: C.muted },
-                        { range: "60–75", label: "Greed",         action: "Reduce new buys",            color: C.amber },
-                        { range: "> 75",  label: "Extreme Greed", action: "Take partial profits",       color: C.red },
-                      ].map(r => {
-                        const fgv = parseFloat(d.fg?.value);
-                        const active = !isNaN(fgv) && (
-                          (r.range === "< 20"  && fgv < 20) ||
-                          (r.range === "20–40" && fgv >= 20 && fgv < 40) ||
-                          (r.range === "40–60" && fgv >= 40 && fgv < 60) ||
-                          (r.range === "60–75" && fgv >= 60 && fgv < 75) ||
-                          (r.range === "> 75"  && fgv >= 75)
-                        );
-                        return (
-                          <div key={r.range} style={{ display: "flex", gap: 10, alignItems: "center",
-                            background: active ? r.color+"18" : "transparent", borderRadius: 4, padding: "4px 8px" }}>
-                            <span style={{ fontFamily: mono, fontSize: 11, color: r.color, minWidth: 50 }}>{r.range}</span>
-                            <span style={{ fontFamily: mono, fontSize: 11, color: C.muted, minWidth: 90 }}>{r.label}</span>
-                            <span style={{ fontFamily: mono, fontSize: 11, color: C.text }}>{r.action}</span>
-                          </div>
-                        );
-                      })}
+                      <div style={{ fontFamily: mono, fontSize: 10, color: C.muted, marginTop: 8, textAlign: "center" }}>{d.fg?.updatedAt ? `${d.fg.source} · ${d.fg.updatedAt}` : "Run scan to fetch"}</div>
                     </div>
                   </div>
                 </div>
-
-                {/* ETF Flows */}
-                <div>
-                  <SectionLabel>ETF Flows (Daily)</SectionLabel>
+                <div><SectionLabel>ETF Flows (Daily)</SectionLabel>
                   <div style={grid}>
-                    <MetricCard label="BTC ETF Net Flow"
-                      value={d.btcetf?.value}
-                      source={d.btcetf?.source}   updatedAt={d.btcetf?.updatedAt}
-                      stale={!d.btcetf}           flash={flash.btcetf}
-                      signalColor={d.btcetf?.change != null ? (parseFloat(d.btcetf.change) >= 0 ? C.green : C.red) : C.muted}
-                      changeLabel={d.btcetf?.change != null
-                        ? (parseFloat(d.btcetf.change) >= 0 ? `▲ +${parseFloat(d.btcetf.change).toFixed(1)}M today` : `▼ ${parseFloat(d.btcetf.change).toFixed(1)}M today`)
-                        : null}
-                      subtext="5d total · today's flow below" />
-                    <MetricCard label="ETH ETF Net Flow"
-                      value={d.ethetf?.value}
-                      source={d.ethetf?.source}   updatedAt={d.ethetf?.updatedAt}
-                      stale={!d.ethetf}           flash={flash.ethetf}
-                      signalColor={d.ethetf?.change != null ? (parseFloat(d.ethetf.change) >= 0 ? C.green : C.red) : C.muted}
-                      changeLabel={d.ethetf?.change != null
-                        ? (parseFloat(d.ethetf.change) >= 0 ? `▲ +${parseFloat(d.ethetf.change).toFixed(1)}M today` : `▼ ${parseFloat(d.ethetf.change).toFixed(1)}M today`)
-                        : null}
-                      subtext="5d total · today's flow below" />
-                    <MetricCard label="SOL ETF Net Flow"
-                      value={d.soletf?.value}
-                      source={d.soletf?.source}   updatedAt={d.soletf?.updatedAt}
-                      stale={!d.soletf}           flash={flash.soletf}
-                      signalColor={d.soletf?.change != null ? (parseFloat(d.soletf.change) >= 0 ? C.green : C.red) : C.muted}
-                      changeLabel={d.soletf?.change != null
-                        ? (parseFloat(d.soletf.change) >= 0 ? `▲ +${parseFloat(d.soletf.change).toFixed(1)}M today` : `▼ ${parseFloat(d.soletf.change).toFixed(1)}M today`)
-                        : null}
-                      subtext="5d total · today's flow below" />
+                    <MetricCard label="BTC ETF Net Flow" value={d.btcetf?.value} source={d.btcetf?.source} updatedAt={d.btcetf?.updatedAt} stale={!d.btcetf} flash={flash.btcetf} signalColor={d.btcetf?.change != null ? (parseFloat(d.btcetf.change) >= 0 ? C.green : C.red) : C.muted} changeLabel={d.btcetf?.change != null ? (parseFloat(d.btcetf.change) >= 0 ? `▲ +${parseFloat(d.btcetf.change).toFixed(1)}M today` : `▼ ${parseFloat(d.btcetf.change).toFixed(1)}M today`) : null} subtext="5d total · today's flow below" />
+                    <MetricCard label="ETH ETF Net Flow" value={d.ethetf?.value} source={d.ethetf?.source} updatedAt={d.ethetf?.updatedAt} stale={!d.ethetf} flash={flash.ethetf} signalColor={d.ethetf?.change != null ? (parseFloat(d.ethetf.change) >= 0 ? C.green : C.red) : C.muted} changeLabel={d.ethetf?.change != null ? (parseFloat(d.ethetf.change) >= 0 ? `▲ +${parseFloat(d.ethetf.change).toFixed(1)}M today` : `▼ ${parseFloat(d.ethetf.change).toFixed(1)}M today`) : null} subtext="5d total · today's flow below" />
+                    <MetricCard label="SOL ETF Net Flow" value={d.soletf?.value} source={d.soletf?.source} updatedAt={d.soletf?.updatedAt} stale={!d.soletf} flash={flash.soletf} signalColor={d.soletf?.change != null ? (parseFloat(d.soletf.change) >= 0 ? C.green : C.red) : C.muted} changeLabel={d.soletf?.change != null ? (parseFloat(d.soletf.change) >= 0 ? `▲ +${parseFloat(d.soletf.change).toFixed(1)}M today` : `▼ ${parseFloat(d.soletf.change).toFixed(1)}M today`) : null} subtext="5d total · today's flow below" />
                   </div>
                 </div>
               </div>
             )}
 
-            {/* TRADING */}
-            {tab === "trading" && (() => {
-              const sui      = d.sui;
-              const suiF     = d.sui_funding;
-              const suiOI    = d.sui_oi;
-              const price    = parseFloat(sui?.value);
-              const pp       = parseFloat(d.sui_pp?.value);
-              const r1       = parseFloat(d.sui_r1?.value);
-              const r2       = parseFloat(d.sui_r2?.value);
-              const s1       = parseFloat(d.sui_s1?.value);
-              const s2       = parseFloat(d.sui_s2?.value);
-              const wh       = parseFloat(d.sui_wh?.value);
-              const wl       = parseFloat(d.sui_wl?.value);
-              const mh       = parseFloat(d.sui_mh?.value);
-              const ml       = parseFloat(d.sui_ml?.value);
-
-              // BTC trading data
-              const btcPrice = parseFloat(String(d.btc?.value || "").replace(/[^0-9.]/g, ""));
-              const btcHigh  = parseFloat(d.btc_high?.value);
-              const btcLow   = parseFloat(d.btc_low?.value);
-              const btcPP    = parseFloat(d.btc_pp?.value);
-              const btcR1    = parseFloat(d.btc_r1?.value);
-              const btcR2    = parseFloat(d.btc_r2?.value);
-              const btcS1    = parseFloat(d.btc_s1?.value);
-              const btcS2    = parseFloat(d.btc_s2?.value);
-              const btcWH    = parseFloat(d.btc_wh?.value);
-              const btcWL    = parseFloat(d.btc_wl?.value);
-              const btcMH    = parseFloat(d.btc_mh?.value);
-              const btcML    = parseFloat(d.btc_ml?.value);
-              const suiHigh  = parseFloat(d.sui_high?.value);
-              const suiLow   = parseFloat(d.sui_low?.value);
-
-              // Price position on range bar
-              const rangeMin = isNaN(ml) ? 0 : ml;
-              const rangeMax = isNaN(mh) ? 0 : mh;
-              const rangePct = (rangeMax > rangeMin && !isNaN(price))
-                ? Math.min(100, Math.max(0, ((price - rangeMin) / (rangeMax - rangeMin)) * 100))
-                : null;
-
-              // Level position helper
-              const lvlPct = v => (!isNaN(v) && rangeMax > rangeMin)
-                ? Math.min(100, Math.max(0, ((v - rangeMin) / (rangeMax - rangeMin)) * 100))
-                : null;
-
-              // SUI funding zone (reuse same logic as BTC)
-              const suiFundVal = parseFloat(suiF?.value);
-              const suiFundZone = (() => {
-                const v = suiFundVal;
-                if (isNaN(v)) return { color: C.muted, label: null, subtext: "Funding signal" };
-                if (v > 0.05)  return { color: C.red,      label: `▲ ${v.toFixed(4)}% — Overheated Longs`,  subtext: "⚠ Long squeeze risk"              };
-                if (v > 0.01)  return { color: C.green,    label: `▲ ${v.toFixed(4)}% — Bullish`,           subtext: "Healthy long bias"                 };
-                if (v > -0.01) return { color: C.chartBlue,label: `► ${v.toFixed(4)}% — Neutral`,           subtext: "Balanced · low squeeze risk"       };
-                if (v > -0.05) return { color: C.red,      label: `▼ ${v.toFixed(4)}% — Bearish`,           subtext: "Shorts dominant"                   };
-                return              { color: C.amber,     label: `▼ ${v.toFixed(4)}% — Overheated Shorts`, subtext: "⚠ Short squeeze potential"         };
-              })();
-
-              // OI zone — use price×OI matrix with SUI price change
-              const suiOIchg = suiOI?.change;
-              const suiPriceChg = sui?.change;
-              const suiOIZone = oiZone(suiOI?.value, suiOIchg, suiPriceChg);
-
-              // Price vs PP zone label
-              const priceZone = (!isNaN(price) && !isNaN(pp))
-                ? price > r1 ? { label: "Above R1 — Bullish breakout", color: C.green }
-                : price > pp ? { label: "Above PP — Bullish bias",     color: C.chartBlue }
-                : price > s1 ? { label: "Below PP — Bearish bias",     color: C.amber }
-                : price > s2 ? { label: "Below S1 — Weak",             color: C.red }
-                : { label: "Below S2 — Deeply oversold",               color: C.red }
-                : null;
-
-              const levelRow = (label, val, col, note) => {
-                if (isNaN(val)) return null;
-                const isPrice = label === "PRICE";
-                return (
-                  <div key={label} style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <span style={{ fontFamily: mono, fontSize: 10, color: col, minWidth: 52, fontWeight: isPrice ? 700 : 400 }}>{label}</span>
-                    <span style={{ fontFamily: mono, fontSize: isPrice ? 14 : 12, color: isPrice ? C.text : col, fontWeight: isPrice ? 700 : 400 }}>${val.toFixed(4)}</span>
-                    {note && <span style={{ fontFamily: mono, fontSize: 10, color: C.muted }}>{note}</span>}
-                    {isPrice && priceZone && <span style={{ fontFamily: mono, fontSize: 10, color: priceZone.color, background: priceZone.color+"18", border:`1px solid ${priceZone.color}44`, borderRadius:3, padding:"1px 6px" }}>{priceZone.label}</span>}
-                  </div>
-                );
-              };
-
-              return (
-                <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-
-                  {/* US Session Clock */}
-                  <USSessionClock />
-
-                  {/* ── BTC Section ── */}
-                  <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: "16px 20px" }}>
-                    <SectionLabel>Bitcoin (BTC)</SectionLabel>
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(190px,1fr))", gap: 12, marginBottom: 16 }}>
-                      <MetricCard label="BTC / USDT"
-                        value={d.btc?.value}       change={d.btc?.change}
-                        source={d.btc?.source}     updatedAt={d.btc?.updatedAt}
-                        stale={!d.btc}             flash={flash.btc} />
-                      <MetricCard label="BTC Funding Rate"
-                        value={d.funding?.value}
-                        source={d.funding?.source} updatedAt={d.funding?.updatedAt}
-                        stale={!d.funding}
-                        unit="%"
-                        signalColor={fundingZoneData.color}
-                        changeLabel={d.funding?.value != null ? fundingZoneData.label : null}
-                        subtext={fundingZoneData.subtext} />
-                      <MetricCard label="BTC Open Interest"
-                        value={d.oi?.value}
-                        source={d.oi?.source}      updatedAt={d.oi?.updatedAt}
-                        stale={!d.oi}
-                        signalColor={oiZoneData.color}
-                        changeLabel={d.oi?.value != null ? oiZoneData.label : null}
-                        subtext={oiZoneData.subtext} />
-                      <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, padding: "14px 16px" }}>
-                        <div style={{ fontFamily: mono, fontSize: 11, color: C.muted, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.07em" }}>24H Range</div>
-                        <RangeBar price={btcPrice} high={btcHigh} low={btcLow} label="BTC" />
-                      </div>
+            {/* ── TRADING ── */}
+            {tab === "trading" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+                <USSessionClock />
+                <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: "16px 20px" }}>
+                  <SectionLabel>Bitcoin (BTC)</SectionLabel>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(190px,1fr))", gap: 12, marginBottom: 16 }}>
+                    <MetricCard label="BTC / USDT" value={d.btc?.value} change={d.btc?.change} source={d.btc?.source} updatedAt={d.btc?.updatedAt} stale={!d.btc} flash={flash.btc} />
+                    <MetricCard label="BTC Funding Rate" value={d.funding?.value} source={d.funding?.source} updatedAt={d.funding?.updatedAt} stale={!d.funding} unit="%" signalColor={fundingZoneData.color} changeLabel={d.funding?.value != null ? fundingZoneData.label : null} subtext={fundingZoneData.subtext} />
+                    <MetricCard label="BTC Open Interest" value={d.oi?.value} source={d.oi?.source} updatedAt={d.oi?.updatedAt} stale={!d.oi} signalColor={oiZoneData.color} changeLabel={d.oi?.value != null ? oiZoneData.label : null} subtext={oiZoneData.subtext} />
+                    <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, padding: "14px 16px" }}>
+                      <div style={{ fontFamily: mono, fontSize: 11, color: C.muted, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.07em" }}>24H Range</div>
+                      <RangeBar price={btcPrice} high={btcHigh} low={btcLow} label="BTC" />
                     </div>
-
-                    {/* BTC S/R Levels */}
-                    {!isNaN(btcPP) && (
-                      <div style={{ display: "flex", gap: 32, flexWrap: "wrap" }}>
-                        <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 240 }}>
-                          {[
-                            ["R2", btcR2, C.green, "2nd resistance"],
-                            ["R1", btcR1, C.chartBlue, "1st resistance"],
-                            ["PP", btcPP, C.amber, "Pivot point"],
-                            ["PRICE", btcPrice, C.text, null],
-                            ["S1", btcS1, C.amber, "1st support"],
-                            ["S2", btcS2, C.red, "2nd support"],
-                          ].map(([lbl, val, col, note]) => !isNaN(val) && (
-                            <div key={lbl} style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                              <span style={{ fontFamily: mono, fontSize: 10, color: col, minWidth: 52, fontWeight: lbl === "PRICE" ? 700 : 400 }}>{lbl}</span>
-                              <span style={{ fontFamily: mono, fontSize: lbl === "PRICE" ? 13 : 12, color: lbl === "PRICE" ? C.text : col, fontWeight: lbl === "PRICE" ? 700 : 400 }}>${val.toLocaleString()}</span>
-                              {note && <span style={{ fontFamily: mono, fontSize: 10, color: C.muted }}>{note}</span>}
-                            </div>
-                          ))}
-                          <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 6, display: "flex", flexDirection: "column", gap: 4, marginTop: 4 }}>
-                            {[["7D High",btcWH,C.green],["7D Low",btcWL,C.red],["30D High",btcMH,C.green],["30D Low",btcML,C.red]].map(([lbl,val,col]) => !isNaN(val) && (
-                              <div key={lbl} style={{ display: "flex", gap: 10 }}>
-                                <span style={{ fontFamily: mono, fontSize: 10, color: col, minWidth: 52 }}>{lbl}</span>
-                                <span style={{ fontFamily: mono, fontSize: 10, color: C.muted }}>${val.toLocaleString()}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    )}
                   </div>
-
-                  {/* ── SUI Section ── */}
-                  <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: "16px 20px" }}>
-                    <SectionLabel>Sui Network (SUI)</SectionLabel>
-
-                  {/* Header metrics row */}
+                  {!isNaN(btcPP) && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 240 }}>
+                      {[["R2",btcR2,C.green,"2nd resistance"],["R1",btcR1,C.chartBlue,"1st resistance"],["PP",btcPP,C.amber,"Pivot point"],["S1",btcS1,C.amber,"1st support"],["S2",btcS2,C.red,"2nd support"]].map(([lbl,val,col,note]) => !isNaN(val) && (
+                        <div key={lbl} style={{ display:"flex", gap:10, alignItems:"center" }}>
+                          <span style={{ fontFamily:mono, fontSize:10, color:col, minWidth:52 }}>{lbl}</span>
+                          <span style={{ fontFamily:mono, fontSize:12, color:col }}>${val.toLocaleString()}</span>
+                          {note && <span style={{ fontFamily:mono, fontSize:10, color:C.muted }}>{note}</span>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: "16px 20px" }}>
+                  <SectionLabel>Sui Network (SUI)</SectionLabel>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(190px,1fr))", gap: 12 }}>
-                    <MetricCard label="SUI / USDT"
-                      value={sui?.value}         change={sui?.change}
-                      source={sui?.source}       updatedAt={sui?.updatedAt}
-                      stale={!sui}               flash={flash.sui} />
-                    <MetricCard label="SUI Funding Rate"
-                      value={suiF?.value}
-                      source={suiF?.source}      updatedAt={suiF?.updatedAt}
-                      stale={!suiF}              flash={flash.sui_funding}
-                      unit="%"
-                      signalColor={suiFundZone.color}
-                      changeLabel={suiF?.value != null ? suiFundZone.label : null}
-                      subtext={suiFundZone.subtext} />
-                    <MetricCard label="SUI Open Interest"
-                      value={suiOI?.value}
-                      source={suiOI?.source}     updatedAt={suiOI?.updatedAt}
-                      stale={!suiOI}             flash={flash.sui_oi}
-                      signalColor={suiOIZone.color}
-                      changeLabel={suiOI?.value != null ? suiOIZone.label : null}
-                      subtext={suiOIZone.subtext} />
+                    <MetricCard label="SUI / USDT" value={d.sui?.value} change={d.sui?.change} source={d.sui?.source} updatedAt={d.sui?.updatedAt} stale={!d.sui} flash={flash.sui} />
+                    <MetricCard label="SUI Funding Rate" value={d.sui_funding?.value} source={d.sui_funding?.source} updatedAt={d.sui_funding?.updatedAt} stale={!d.sui_funding} unit="%" signalColor={suiFundingZone.color} changeLabel={d.sui_funding?.value != null ? suiFundingZone.label : null} subtext={suiFundingZone.subtext} />
+                    <MetricCard label="SUI Open Interest" value={d.sui_oi?.value} source={d.sui_oi?.source} updatedAt={d.sui_oi?.updatedAt} stale={!d.sui_oi} signalColor={suiOIZone.color} changeLabel={d.sui_oi?.value != null ? suiOIZone.label : null} subtext={suiOIZone.subtext} />
                     <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, padding: "14px 16px" }}>
                       <div style={{ fontFamily: mono, fontSize: 11, color: C.muted, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.07em" }}>24H Range</div>
                       <RangeBar price={price} high={suiHigh} low={suiLow} label="SUI" />
                     </div>
                   </div>
-
-                  {/* S/R + Range Chart */}
-                  <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: "16px 20px" }}>
-                    <SectionLabel>Support & Resistance — Pivot Levels (Daily) + 30-Day Range</SectionLabel>
-                    <div style={{ display: "flex", gap: 32, flexWrap: "wrap" }}>
-
-                      {/* Level list */}
-                      <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 260 }}>
-                        {levelRow("R2",    r2,    C.green,     "2nd resistance")}
-                        {levelRow("R1",    r1,    C.chartBlue, "1st resistance")}
-                        {levelRow("PP",    pp,    C.amber,     "Pivot point")}
-                        {levelRow("PRICE", price, C.text,      null)}
-                        {levelRow("S1",    s1,    C.amber,     "1st support")}
-                        {levelRow("S2",    s2,    C.red,       "2nd support")}
-                        <div style={{ marginTop: 4, borderTop: `1px solid ${C.border}`, paddingTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
-                          {levelRow("7D High", wh, C.green,  "weekly high")}
-                          {levelRow("7D Low",  wl, C.red,    "weekly low")}
-                          {levelRow("30D High",mh, C.green,  "monthly high")}
-                          {levelRow("30D Low", ml, C.red,    "monthly low")}
-                        </div>
-                      </div>
-
-                      {/* Vertical range bar */}
-                      <div style={{ flex: 1, minWidth: 160, display: "flex", gap: 12, alignItems: "stretch" }}>
-                        {rangePct !== null && (
-                          <div style={{ display: "flex", flexDirection: "column", justifyContent: "space-between", alignItems: "center" }}>
-                            {/* Vertical bar */}
-                            <div style={{ position: "relative", width: 24, flex: 1,
-                              background: `linear-gradient(to bottom, ${C.green}, ${C.chartBlue}, ${C.amber}, ${C.red})`,
-                              borderRadius: 6, margin: "4px 0" }}>
-                              {/* Price needle */}
-                              <div style={{
-                                position: "absolute",
-                                top: `${100 - rangePct}%`,
-                                left: "50%", transform: "translate(-50%, -50%)",
-                                width: 36, height: 3, borderRadius: 2,
-                                background: C.text, boxShadow: "0 0 6px #000",
-                                zIndex: 2
-                              }} />
-                              {/* Level ticks */}
-                              {[
-                                { val: r2, col: C.green },
-                                { val: r1, col: C.chartBlue },
-                                { val: pp, col: C.amber },
-                                { val: s1, col: C.amber },
-                                { val: s2, col: C.red },
-                              ].map(({ val, col }) => {
-                                const p = lvlPct(val);
-                                if (p === null) return null;
-                                return (
-                                  <div key={val} style={{
-                                    position: "absolute", top: `${100 - p}%`,
-                                    left: "100%", marginLeft: 2,
-                                    width: 6, height: 1, background: col, opacity: 0.8
-                                  }} />
-                                );
-                              })}
-                            </div>
-                          </div>
-                        )}
-                        {/* Labels alongside bar */}
-                        {rangePct !== null && (
-                          <div style={{ flex: 1, position: "relative", minHeight: 200 }}>
-                            {[
-                              { val: mh,  label: "30D High", col: C.green },
-                              { val: r2,  label: "R2",       col: C.green },
-                              { val: r1,  label: "R1",       col: C.chartBlue },
-                              { val: pp,  label: "PP",       col: C.amber },
-                              { val: s1,  label: "S1",       col: C.amber },
-                              { val: s2,  label: "S2",       col: C.red },
-                              { val: ml,  label: "30D Low",  col: C.red },
-                            ].map(({ val, label, col }) => {
-                              const p = lvlPct(val);
-                              if (p === null || isNaN(val)) return null;
-                              return (
-                                <div key={label} style={{
-                                  position: "absolute", top: `${100 - p}%`,
-                                  transform: "translateY(-50%)",
-                                  display: "flex", gap: 6, alignItems: "center"
-                                }}>
-                                  <span style={{ fontFamily: mono, fontSize: 9, color: col, minWidth: 40 }}>{label}</span>
-                                  <span style={{ fontFamily: mono, fontSize: 9, color: C.muted }}>${val.toFixed(4)}</span>
-                                </div>
-                              );
-                            })}
-                            {/* Price label */}
-                            {!isNaN(price) && (
-                              <div style={{
-                                position: "absolute", top: `${100 - rangePct}%`,
-                                transform: "translateY(-50%)",
-                                display: "flex", gap: 6, alignItems: "center"
-                              }}>
-                                <span style={{ fontFamily: mono, fontSize: 10, color: C.text, fontWeight: 700, minWidth: 40 }}>NOW</span>
-                                <span style={{ fontFamily: mono, fontSize: 10, color: C.text, fontWeight: 700 }}>${price.toFixed(4)}</span>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                        {rangePct === null && (
-                          <div style={{ fontFamily: mono, fontSize: 12, color: C.muted, paddingTop: 8 }}>Run scan to load S/R levels</div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                  </div> {/* end SUI section */}
-
-                  {/* Liquidation Heatmap — CoinGlass embed */}
-                  <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, overflow: "hidden" }}>
-                    <div style={{ padding: "12px 16px", borderBottom: `1px solid ${C.border}`,
-                      display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                        <span style={{ fontFamily: mono, fontSize: 11, color: C.muted, textTransform: "uppercase", letterSpacing: "0.07em" }}>Liquidation Heatmap</span>
-                        <span style={{ fontFamily: mono, fontSize: 9, color: C.green, background: C.green+"18", border:`1px solid ${C.green}44`, borderRadius: 3, padding: "1px 6px" }}>FREE · LIVE</span>
-                      </div>
-                      <div style={{ display: "flex", gap: 8 }}>
-                        <a href="https://www.coinglass.com/LiquidationData/SUI" target="_blank"
-                          style={{ fontFamily: mono, fontSize: 10, color: C.blue, textDecoration: "none",
-                            background: C.blue+"18", border:`1px solid ${C.blue}44`, borderRadius: 4, padding: "3px 10px" }}>
-                          Open CoinGlass ↗
-                        </a>
-                        <a href="https://www.tradingdifferent.com" target="_blank"
-                          style={{ fontFamily: mono, fontSize: 10, color: C.muted, textDecoration: "none",
-                            background: C.border, border:`1px solid ${C.border}`, borderRadius: 4, padding: "3px 10px" }}>
-                          TradingDifferent ↗
-                        </a>
-                      </div>
-                    </div>
-                    {/* CoinGlass SUI liquidation heatmap embed */}
-                    <div style={{ position: "relative", width: "100%", paddingBottom: 0 }}>
-                      <iframe
-                        src="https://www.coinglass.com/pro/futures/LiquidationHeatMap?symbol=SUI&interval=12"
-                        style={{ width: "100%", height: 480, border: "none", display: "block",
-                          background: C.bg, borderRadius: "0 0 8px 8px" }}
-                        title="SUI Liquidation Heatmap — CoinGlass"
-                        loading="lazy"
-                      />
-                    </div>
-                    <div style={{ padding: "8px 16px", borderTop: `1px solid ${C.border}` }}>
-                      <span style={{ fontFamily: mono, fontSize: 10, color: C.muted }}>
-                        Source: CoinGlass (free) · Bright clusters = high leverage concentration · white = likely liquidation zone
-                        · if iframe blocked by browser, use the Open CoinGlass link above
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* OI + Funding as liq proxy reminder */}
-                  <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: "12px 16px",
-                    display: "flex", gap: 10, alignItems: "flex-start" }}>
-                    <span style={{ color: C.chartBlue, fontSize: 13, marginTop: 1 }}>💡</span>
-                    <div style={{ fontFamily: mono, fontSize: 11, color: C.muted, lineHeight: 1.8 }}>
-                      <span style={{ color: C.text }}>Reading the heatmap:</span> bright yellow/white clusters are dense liquidation zones.
-                      Price tends to gravitate toward them as market makers hunt liquidity.
-                      Combine with <span style={{ color: C.text }}>funding rate</span> direction and
-                      <span style={{ color: C.text }}> OI trend</span> above to judge whether a run to those levels is likely.
-                    </div>
-                  </div>
-
                 </div>
-              );
-            })()}
+                <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, overflow: "hidden" }}>
+                  <div style={{ padding: "12px 16px", borderBottom: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span style={{ fontFamily: mono, fontSize: 11, color: C.muted, textTransform: "uppercase", letterSpacing: "0.07em" }}>Liquidation Heatmap — SUI</span>
+                    <a href="https://www.coinglass.com/LiquidationData/SUI" target="_blank" style={{ fontFamily: mono, fontSize: 10, color: C.blue, textDecoration: "none", background: C.blue+"18", border:`1px solid ${C.blue}44`, borderRadius: 4, padding: "3px 10px" }}>Open CoinGlass ↗</a>
+                  </div>
+                  <iframe src="https://www.coinglass.com/pro/futures/LiquidationHeatMap?symbol=SUI&interval=12" style={{ width:"100%", height:480, border:"none", display:"block", background:C.bg }} title="SUI Liquidation Heatmap" loading="lazy" />
+                </div>
+              </div>
+            )}
 
-            {/* CATALYSTS */}
+            {/* ── PATTERNS (NEW TAB) ── */}
+            {tab === "patterns" && <PatternsTab sheetData={d} />}
+
+            {/* ── CATALYSTS ── */}
             {tab === "catalysts" && (
               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-
-                {/* AI Briefing panel */}
                 <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: "16px 20px" }}>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: aiSummary ? 14 : 0 }}>
                     <div>
                       <span style={{ fontFamily: sans, fontWeight: 600, fontSize: 13, color: C.text }}>AI Market Briefing</span>
-                      <span style={{ fontFamily: mono, fontSize: 10, color: C.muted, marginLeft: 10 }}>
-                        Claude · live headlines + your indicators
-                      </span>
+                      <span style={{ fontFamily: mono, fontSize: 10, color: C.muted, marginLeft: 10 }}>Claude · live headlines + your indicators</span>
                     </div>
                     <button onClick={interpretCatalysts} disabled={aiLoading || catalysts.length === 0}
-                      style={{ background: aiLoading ? C.border : C.purple, color: "#0d1117",
-                        fontFamily: mono, fontWeight: 700, fontSize: 11, border: "none",
-                        borderRadius: 6, padding: "7px 16px", letterSpacing: "0.05em",
-                        opacity: (aiLoading || catalysts.length === 0) ? 0.6 : 1,
-                        cursor: (aiLoading || catalysts.length === 0) ? "default" : "pointer",
-                        transition: "all 0.2s" }}>
+                      style={{ background: aiLoading ? C.border : C.purple, color: "#0d1117", fontFamily: mono, fontWeight: 700, fontSize: 11, border: "none", borderRadius: 6, padding: "7px 16px", opacity: (aiLoading || catalysts.length === 0) ? 0.6 : 1, cursor: (aiLoading || catalysts.length === 0) ? "default" : "pointer" }}>
                       {aiLoading ? "⟳ INTERPRETING..." : "✦ INTERPRET"}
                     </button>
                   </div>
-                  {aiSummary && (
-                    <div style={{ fontFamily: mono, fontSize: 12, color: C.text, lineHeight: 1.9,
-                      borderTop: `1px solid ${C.border}`, paddingTop: 14, whiteSpace: "pre-wrap" }}>
-                      {aiSummary}
-                    </div>
-                  )}
-                  {catalysts.length === 0 && !aiSummary && (
-                    <div style={{ fontFamily: mono, fontSize: 11, color: C.amber, marginTop: 10 }}>
-                      ⚠ No headlines — hit ⚡ LIVE SCAN to load
-                    </div>
-                  )}
+                  {aiSummary && <div style={{ fontFamily: mono, fontSize: 12, color: C.text, lineHeight: 1.9, borderTop: `1px solid ${C.border}`, paddingTop: 14, whiteSpace: "pre-wrap" }}>{aiSummary}</div>}
+                  {catalysts.length === 0 && !aiSummary && <div style={{ fontFamily: mono, fontSize: 11, color: C.amber, marginTop: 10 }}>⚠ No headlines — hit ⚡ LIVE SCAN to load</div>}
                 </div>
-
-                {/* Live headlines */}
                 {catalysts.length > 0 && (
                   <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    <SectionLabel>Live Headlines · {catalysts.length} items · updated by Apps Script daily</SectionLabel>
+                    <SectionLabel>Live Headlines · {catalysts.length} items</SectionLabel>
                     {catalysts.map((c, i) => {
                       const topicCol = { macro: C.blue, crypto: C.amber, risk: C.red }[c.topic] || C.muted;
                       let dateStr = c.pubDate;
                       try { dateStr = new Date(c.pubDate).toLocaleString("en-GB", { month:"short", day:"numeric", hour:"2-digit", minute:"2-digit" }); } catch{}
                       return (
-                        <a key={i} href={c.url} target="_blank" rel="noopener noreferrer" style={{ textDecoration: "none" }}>
-                          <div
-                            onMouseEnter={e => e.currentTarget.style.background = C.hover}
-                            onMouseLeave={e => e.currentTarget.style.background = C.surface}
-                            style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8,
-                              padding: "11px 16px", display: "flex", alignItems: "flex-start", gap: 12,
-                              transition: "background 0.15s", cursor: "pointer" }}>
-                            <span style={{ fontFamily: mono, fontSize: 10, color: topicCol,
-                              background: topicCol+"22", border:`1px solid ${topicCol}44`,
-                              borderRadius: 3, padding: "2px 7px", textTransform: "uppercase",
-                              letterSpacing: "0.06em", flexShrink: 0, marginTop: 2 }}>{c.topic}</span>
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{ fontFamily: sans, fontSize: 13, color: C.text, fontWeight: 500, lineHeight: 1.5, marginBottom: 2 }}>{c.title}</div>
-                              <div style={{ fontFamily: mono, fontSize: 10, color: C.muted }}>{c.source} · {dateStr}</div>
+                        <a key={i} href={c.url} target="_blank" rel="noopener noreferrer" style={{ textDecoration:"none" }}>
+                          <div onMouseEnter={e => e.currentTarget.style.background = C.hover} onMouseLeave={e => e.currentTarget.style.background = C.surface}
+                            style={{ background: C.surface, border:`1px solid ${C.border}`, borderRadius:8, padding:"11px 16px", display:"flex", alignItems:"flex-start", gap:12, transition:"background 0.15s", cursor:"pointer" }}>
+                            <span style={{ fontFamily:mono, fontSize:10, color:topicCol, background:topicCol+"22", border:`1px solid ${topicCol}44`, borderRadius:3, padding:"2px 7px", textTransform:"uppercase", letterSpacing:"0.06em", flexShrink:0, marginTop:2 }}>{c.topic}</span>
+                            <div style={{ flex:1, minWidth:0 }}>
+                              <div style={{ fontFamily:sans, fontSize:13, color:C.text, fontWeight:500, lineHeight:1.5, marginBottom:2 }}>{c.title}</div>
+                              <div style={{ fontFamily:mono, fontSize:10, color:C.muted }}>{c.source} · {dateStr}</div>
                             </div>
-                            <span style={{ fontFamily: mono, fontSize: 11, color: C.muted, flexShrink: 0, paddingTop: 2 }}>↗</span>
+                            <span style={{ fontFamily:mono, fontSize:11, color:C.muted, flexShrink:0, paddingTop:2 }}>↗</span>
                           </div>
                         </a>
                       );
                     })}
                   </div>
                 )}
-
-                {/* Static forward-looking events */}
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                   <SectionLabel>Scheduled Events & Macro Triggers</SectionLabel>
                   {[
-                    { date: "2026-Q2", event: "Clarity Act — Senate Markup",     impact: "bull",  note: "Stablecoin yield dispute unresolved. Passage = major bullish catalyst", confidence: "Medium" },
-                    { date: "2026-Q2", event: "Debt Ceiling Resolution",          impact: "watch", note: "TGA drawdown = short-term liquidity injection",                          confidence: "Medium" },
-                    { date: "2026-H1", event: "Fed Balance Sheet Pivot (QT→QE)", impact: "bull",  note: "Biggest macro trigger. Watch WALCL weekly",                              confidence: "Low"    },
+                    { date:"2026-Q2", event:"Clarity Act — Senate Markup", impact:"bull", note:"Stablecoin yield dispute unresolved. Passage = major bullish catalyst", confidence:"Medium" },
+                    { date:"2026-Q2", event:"Debt Ceiling Resolution", impact:"watch", note:"TGA drawdown = short-term liquidity injection", confidence:"Medium" },
+                    { date:"2026-H1", event:"Fed Balance Sheet Pivot (QT→QE)", impact:"bull", note:"Biggest macro trigger. Watch WALCL weekly", confidence:"Low" },
                   ].map((c, i) => (
-                    <div key={i}
-                      onMouseEnter={e => e.currentTarget.style.background = C.hover}
-                      onMouseLeave={e => e.currentTarget.style.background = C.surface}
-                      style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8,
-                        padding: "14px 18px", display: "flex", alignItems: "flex-start", gap: 16,
-                        transition: "background 0.15s", flexWrap: "wrap" }}>
-                      <div style={{ minWidth: 90, fontFamily: mono, fontSize: 12, color: C.blue, paddingTop: 2 }}>{c.date}</div>
-                      <div style={{ flex: 1, minWidth: 200 }}>
-                        <div style={{ fontFamily: sans, fontWeight: 600, fontSize: 14, color: C.text, marginBottom: 4 }}>{c.event}</div>
-                        <div style={{ fontFamily: mono, fontSize: 12, color: C.muted, lineHeight: 1.6 }}>{c.note}</div>
+                    <div key={i} onMouseEnter={e => e.currentTarget.style.background = C.hover} onMouseLeave={e => e.currentTarget.style.background = C.surface}
+                      style={{ background:C.surface, border:`1px solid ${C.border}`, borderRadius:8, padding:"14px 18px", display:"flex", alignItems:"flex-start", gap:16, transition:"background 0.15s", flexWrap:"wrap" }}>
+                      <div style={{ minWidth:90, fontFamily:mono, fontSize:12, color:C.blue, paddingTop:2 }}>{c.date}</div>
+                      <div style={{ flex:1, minWidth:200 }}>
+                        <div style={{ fontFamily:sans, fontWeight:600, fontSize:14, color:C.text, marginBottom:4 }}>{c.event}</div>
+                        <div style={{ fontFamily:mono, fontSize:12, color:C.muted, lineHeight:1.6 }}>{c.note}</div>
                       </div>
-                      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
+                      <div style={{ display:"flex", flexDirection:"column", alignItems:"flex-end", gap:6 }}>
                         <Tag label={c.impact} />
-                        <span style={{ fontFamily: mono, fontSize: 10, color: C.muted }}>Confidence: {c.confidence}</span>
+                        <span style={{ fontFamily:mono, fontSize:10, color:C.muted }}>Confidence: {c.confidence}</span>
                       </div>
                     </div>
                   ))}
                 </div>
-
               </div>
             )}
 
-            {/* TIPS */}
+            {/* ── TIPS ── */}
             {tab === "tips" && (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 <SectionLabel>Decision Rules & Playbook</SectionLabel>
                 {TIPS.map((t, i) => (
-                  <div key={i}
-                    onMouseEnter={e => e.currentTarget.style.background = C.hover}
-                    onMouseLeave={e => e.currentTarget.style.background = C.surface}
-                    style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8,
-                      padding: "14px 18px", display: "flex", alignItems: "flex-start", gap: 14,
-                      transition: "background 0.15s" }}>
-                    <div style={{ width: 6, height: 6, borderRadius: "50%", background: C.blue, marginTop: 6, flexShrink: 0 }} />
+                  <div key={i} onMouseEnter={e => e.currentTarget.style.background = C.hover} onMouseLeave={e => e.currentTarget.style.background = C.surface}
+                    style={{ background:C.surface, border:`1px solid ${C.border}`, borderRadius:8, padding:"14px 18px", display:"flex", alignItems:"flex-start", gap:14, transition:"background 0.15s" }}>
+                    <div style={{ width:6, height:6, borderRadius:"50%", background:C.blue, marginTop:6, flexShrink:0 }} />
                     <div>
-                      <div style={{ fontFamily: sans, fontWeight: 600, fontSize: 13, color: C.blue, marginBottom: 4 }}>{t.label}</div>
-                      <div style={{ fontFamily: mono, fontSize: 12, color: C.muted, lineHeight: 1.7 }}>{t.body}</div>
+                      <div style={{ fontFamily:sans, fontWeight:600, fontSize:13, color:C.blue, marginBottom:4 }}>{t.label}</div>
+                      <div style={{ fontFamily:mono, fontSize:12, color:C.muted, lineHeight:1.7 }}>{t.body}</div>
                     </div>
                   </div>
                 ))}
