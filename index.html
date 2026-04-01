@@ -27,6 +27,14 @@
     const { useState, useCallback, useRef, useEffect } = React;
 
     // ── Sheet config ──────────────────────────────────────────────────────
+    // ── API endpoint — auto-routes through local proxy on localhost ───────────
+    // On Claude.ai artifact sandbox: direct call to Anthropic works (CORS allowed).
+    // On localhost: proxy.js intercepts /api/anthropic and injects the API key.
+    const IS_LOCAL   = location.hostname === "localhost" || location.hostname === "127.0.0.1";
+    const CLAUDE_API = IS_LOCAL
+      ? "/api/anthropic/v1/messages"
+      : CLAUDE_API;
+
     const SHEET_ID     = "1hGTwlIhPwi12-vjqaA92umV2oFgjU9aa-ffCoFNUQS8";
     const SHEET_CSV    = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=582118687`;
     const CATALYST_GID = "325389479";
@@ -762,7 +770,7 @@ Priority patterns: Morning Star, Bullish/Bearish Engulfing, Three White Soldiers
 Respond ONLY in valid JSON (no markdown):
 {"scanDate":"","tf":"","signals":[{"ticker":"","assetName":"","pattern":"","direction":"bull|bear","timeframe":"Weekly|Monthly","patternAge":"confirmed|forming|1 candle old","rsiValue":42,"rsiDivergence":false,"volumeRatio":1.35,"atrBodyRatio":1.8,"extensionPct":8.5,"confluence":{"ma200":"bull|bear|na","above20dMA":true,"above20mMA":false,"rsi":"bull|bear|neutral"},"thesis":"2 sentences specific to this asset and setup","entryZone":"","stopLoss":"","target":"","keyLevel":"specific price level significance"}]}`;
         try {
-          const res = await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:2400,messages:[{role:"user",content:prompt}]})});
+          const res = await fetch(CLAUDE_API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:2400,messages:[{role:"user",content:prompt}]})});
           const data = await res.json();
           if(data.error) throw new Error(data.error.message);
           const raw = (data.content||[]).filter(b=>b.type==="text").map(b=>b.text).join("").replace(/```json|```/g,"").trim();
@@ -800,7 +808,7 @@ BEFORE YOU TOUCH THE BUY BUTTON
 
 2-4 sentences each. Use £500 position example. Warm, honest, no hype.`;
         try {
-          const res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1000,messages:[{role:"user",content:prompt}]})});
+          const res=await fetch(CLAUDE_API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1000,messages:[{role:"user",content:prompt}]})});
           const d=await res.json(); if(d.error) throw new Error(d.error.message);
           const txt=(d.content||[]).filter(b=>b.type==="text").map(b=>b.text).join("").trim();
           setCoachText(prev=>({...prev,[idx]:txt})); setExpandedIdx(idx);
@@ -965,7 +973,7 @@ Consider: current price action, macro tailwinds/headwinds, volatility regime, mo
 Respond ONLY valid JSON no markdown:
 {"scanDate":"","marketRegime":"1 sentence","trades":[{"rank":1,"ticker":"","assetName":"","category":"crypto|space|tech|commodity","direction":"long|short","setup":"eg Bull flag retest","conviction":82,"thesis":"2 sentences max","entryZone":"","stopLoss":"","target1":"","target2":"","rrRatio":"","timeframe":"","robinhoodSteps":"1. ... 2. ... 3. ...","catalyst":""}]}`;
         try {
-          const res = await fetch("https://api.anthropic.com/v1/messages", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ model:"claude-sonnet-4-20250514", max_tokens:2200, messages:[{role:"user",content:prompt}] }) });
+          const res = await fetch(CLAUDE_API, { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ model:"claude-sonnet-4-20250514", max_tokens:2200, messages:[{role:"user",content:prompt}] }) });
           const data = await res.json();
           if (data.error) throw new Error(data.error.message);
           const raw = (data.content||[]).filter(b=>b.type==="text").map(b=>b.text).join("").replace(/```json|```/g,"").trim();
@@ -997,7 +1005,7 @@ HOW TO KNOW WHEN TO EXIT
 
 2-4 sentences each. Warm but honest. Use £500 example. No hype.`;
         try {
-          const res = await fetch("https://api.anthropic.com/v1/messages", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ model:"claude-sonnet-4-20250514", max_tokens:1000, messages:[{role:"user",content:prompt}] }) });
+          const res = await fetch(CLAUDE_API, { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ model:"claude-sonnet-4-20250514", max_tokens:1000, messages:[{role:"user",content:prompt}] }) });
           const data = await res.json();
           if (data.error) throw new Error(data.error.message);
           const txt = (data.content||[]).filter(b=>b.type==="text").map(b=>b.text).join("").trim();
@@ -1235,7 +1243,7 @@ HOW TO KNOW WHEN TO EXIT
           const headlines = catalysts.map((c, i) => `${i+1}. [${(c.topic||"news").toUpperCase()}] ${c.title} (${c.source})`).join("\n");
           const ctx = [data.y10,data.y2,data.spread,data.dxy,data.vix,data.cpi,data.ism,data.btc,data.dom,data.fg,data.funding].map((d,i) => { const keys=["y10","y2","spread","dxy","vix","cpi","ism","btc","dom","fg","funding"]; return d ? `${keys[i]}: ${d.value}` : null; }).filter(Boolean).join(" · ");
           const prompt = `You are a macro and crypto markets analyst. Live indicators: ${ctx}\n\nToday's top headlines:\n${headlines}\n\nWrite a concise 5-bullet analyst briefing:\n• Dominant macro theme and what it means for risk assets\n• Direct Bitcoin/crypto implication from the news\n• Key level or data point to watch this week\n• Regime signal: risk-on / risk-off / mixed — and why\n• One actionable takeaway for a BTC/ETH/SUI portfolio\n\nBe specific. Reference actual numbers. No generic statements. Max 2 sentences per bullet.`;
-          const response = await fetch("https://api.anthropic.com/v1/messages", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ model:"claude-sonnet-4-20250514", max_tokens:800, messages:[{role:"user",content:prompt}] }) });
+          const response = await fetch(CLAUDE_API, { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ model:"claude-sonnet-4-20250514", max_tokens:800, messages:[{role:"user",content:prompt}] }) });
           const d2 = await response.json();
           if (d2.error) throw new Error(d2.error.message);
           const txt = (d2.content||[]).filter(b=>b.type==="text").map(b=>b.text).join("\n").trim();
