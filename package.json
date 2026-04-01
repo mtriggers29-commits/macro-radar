@@ -1,0 +1,14 @@
+{
+  "name": "macro-radar-proxy",
+  "version": "1.0.0",
+  "description": "Local CORS proxy for Macro Radar — forwards browser requests to Anthropic API",
+  "main": "proxy.js",
+  "scripts": {
+    "start": "node proxy.js",
+    "dev": "ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY} node proxy.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "http-proxy-middleware": "^3.0.0"
+  }
+}
