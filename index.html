@@ -1260,6 +1260,24 @@ HOW TO KNOW WHEN TO EXIT
       const signals = Object.fromEntries(Object.entries(d).filter(([k]) => MACRO_SIGNAL_KEYS.has(k)).map(([k,v]) => [k, v?.signal]));
       const grid = { display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(190px,1fr))", gap: 12 };
 
+      // ── Parse packed market data from sheet ─────────────────────────────────
+      // Format: price|change|field3|field4|field5|field6|field7|field8
+      const parseMkt = (raw) => {
+        if (!raw || raw === "ERR") return null;
+        const [price, change, f3, f4, f5, f6, f7, f8] = (raw || "").split("|");
+        return { price, change: parseFloat(change), f3, f4, f5, f6, f7, f8 };
+      };
+      const parseBroad = (raw) => {
+        // price|change|ma50pos|ma200pos|regime|voltrend|pos52w
+        const p = parseMkt(raw); if (!p) return null;
+        return { price: p.price, change: p.change, ma50pos: parseInt(p.f3), ma200pos: parseInt(p.f4), regime: p.f5, voltrend: parseFloat(p.f6), pos52w: parseFloat(p.f7) };
+      };
+      const parseSector = (raw) => {
+        // price|change|rs4w|voltrend|leadership|pos52w|ma50pos|ma200pos
+        const p = parseMkt(raw); if (!p) return null;
+        return { price: p.price, change: p.change, rs4w: parseFloat(p.f3), voltrend: parseFloat(p.f4), leadership: p.f5, pos52w: parseFloat(p.f6), ma50pos: parseInt(p.f7), ma200pos: parseInt(p.f8) };
+      };
+
       const spreadNum   = parseFloat(d.spread?.value);
       const spreadColor = spreadSignalColor(d.spread?.value);
       const vixZoneData = vixZone(d.vix?.value);
@@ -1311,7 +1329,7 @@ HOW TO KNOW WHEN TO EXIT
       const lvlPct = v => (!isNaN(v) && rangeMax > rangeMin) ? Math.min(100, Math.max(0, ((v - rangeMin) / (rangeMax - rangeMin)) * 100)) : null;
       const priceZone = (!isNaN(price) && !isNaN(pp)) ? (price > r1 ? { label:"Above R1 — Bullish breakout",color:C.green} : price > pp ? {label:"Above PP — Bullish bias",color:C.chartBlue} : price > s1 ? {label:"Below PP — Bearish bias",color:C.amber} : {label:"Below S1 — Weak",color:C.red}) : null;
 
-      const TABS = ["macro","crypto","trading","patterns","catalysts","tips"];
+      const TABS = ["macro","markets","crypto","trading","patterns","catalysts","tips"];
 
       return (
         <div style={{ background: C.bg, minHeight: "100vh", paddingBottom: 40 }}>
@@ -1374,6 +1392,190 @@ HOW TO KNOW WHEN TO EXIT
                   style={{ fontFamily: mono, fontSize: 12, textTransform: "uppercase", letterSpacing: "0.08em", padding: "10px 18px", border: "none", borderRadius: "6px 6px 0 0", background: tab === t ? C.surface : "transparent", color: tab === t ? C.text : C.muted, borderBottom: tab === t ? `2px solid ${t === "patterns" ? C.purple : C.blue}` : "2px solid transparent", transition: "all 0.15s", whiteSpace: "nowrap" }}>{t}</button>
               ))}
             </div>
+
+            {/* ── MARKETS TAB ── */}
+            {tab === "markets" && (() => {
+              const spy  = parseBroad(d.mkt_SPY?.value);
+              const qqq  = parseBroad(d.mkt_QQQ?.value);
+              const iwm  = parseBroad(d.mkt_IWM?.value);
+              const arkx = parseSector(d.mkt_ARKX?.value);
+              const smh  = parseSector(d.mkt_SMH?.value);
+              const xle  = parseSector(d.mkt_XLE?.value);
+              const align = d.mkt_liq_align?.value || null;
+
+              const regimeColor = (r) => r === "bull" ? C.green : r === "bear" ? C.red : C.amber;
+              const regimeLabel = (r) => r === "bull" ? "↑ Uptrend" : r === "bear" ? "↓ Downtrend" : "→ Chop";
+              const maLabel = (pos) => pos === 1 ? { label: "Above", color: C.green } : pos === -1 ? { label: "Below", color: C.red } : { label: "At", color: C.amber };
+              const leaderColor = (l) => l === "leading" ? C.green : l === "lagging" ? C.red : C.muted;
+
+              const alignConfig = {
+                "aligned-bull":        { color: C.green,     icon: "▲", label: "Aligned — Bullish",        sub: "SPY rising + liquidity expanding · real momentum" },
+                "aligned-bear":        { color: C.red,       icon: "▼", label: "Aligned — Bearish",        sub: "SPY falling + liquidity contracting · confirmed risk-off" },
+                "diverging-caution":   { color: C.amber,     icon: "⚠", label: "Diverging — Caution",      sub: "Price up but liquidity not expanding · fragile rally" },
+                "lagging-opportunity": { color: C.chartBlue, icon: "◆", label: "Lagging — Watch",          sub: "Liquidity expanding but price lagging · potential entry" },
+                "neutral":             { color: C.muted,     icon: "►", label: "Neutral",                  sub: "No clear alignment signal" },
+                "unknown":             { color: C.muted,     icon: "—", label: "—",                        sub: "Run scan to calculate" },
+              }[align || "unknown"];
+
+              const BroadCard = ({ label, ticker, data, src, upd }) => {
+                if (!data) return (
+                  <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: "14px 16px" }}>
+                    <div style={{ fontFamily: mono, fontSize: 11, color: C.muted, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 8 }}>{label}</div>
+                    <div style={{ fontFamily: mono, fontSize: 12, color: C.muted }}>— run scan</div>
+                  </div>
+                );
+                const rc = regimeColor(data.regime);
+                const ma50  = maLabel(data.ma50pos);
+                const ma200 = maLabel(data.ma200pos);
+                const chgCol = data.change > 0 ? C.green : data.change < 0 ? C.red : C.muted;
+                return (
+                  <div style={{ background: C.surface, border: `1px solid ${rc}44`, borderRadius: 8, padding: "14px 16px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                      <div style={{ fontFamily: mono, fontSize: 11, color: C.muted, textTransform: "uppercase", letterSpacing: "0.07em" }}>{label}</div>
+                      <span style={{ fontFamily: mono, fontSize: 10, color: rc, background: rc+"18", border:`0.5px solid ${rc}44`, borderRadius: 3, padding: "1px 7px" }}>{regimeLabel(data.regime)}</span>
+                    </div>
+                    <div style={{ fontFamily: "Inter", fontWeight: 700, fontSize: 26, color: C.text, marginBottom: 4 }}>{data.price}</div>
+                    <div style={{ fontFamily: mono, fontSize: 12, color: chgCol, marginBottom: 10 }}>
+                      {data.change > 0 ? "▲" : data.change < 0 ? "▼" : "—"} {Math.abs(data.change).toFixed(2)}% <span style={{ color: C.muted, fontSize: 10 }}>1d</span>
+                    </div>
+                    <div style={{ display: "flex", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
+                      <span style={{ fontFamily: mono, fontSize: 9, padding: "2px 7px", borderRadius: 3, background: ma50.color+"18", color: ma50.color, border:`0.5px solid ${ma50.color}44` }}>{ma50.label} 50d MA</span>
+                      <span style={{ fontFamily: mono, fontSize: 9, padding: "2px 7px", borderRadius: 3, background: ma200.color+"18", color: ma200.color, border:`0.5px solid ${ma200.color}44` }}>{ma200.label} 200d MA</span>
+                    </div>
+                    {!isNaN(data.pos52w) && (
+                      <div style={{ fontFamily: mono, fontSize: 10, color: data.pos52w > -5 ? C.green : data.pos52w > -15 ? C.amber : C.red }}>
+                        {data.pos52w > 0 ? "▲" : "▼"} {Math.abs(data.pos52w).toFixed(1)}% from 52w high
+                      </div>
+                    )}
+                    {!isNaN(data.voltrend) && (
+                      <div style={{ fontFamily: mono, fontSize: 10, color: data.voltrend > 10 ? C.green : data.voltrend < -10 ? C.red : C.muted, marginTop: 2 }}>
+                        Vol trend: {data.voltrend > 0 ? "+" : ""}{data.voltrend.toFixed(0)}% vs 20d avg
+                      </div>
+                    )}
+                    <div style={{ marginTop: 8, fontSize: 10, fontFamily: mono, color: C.muted+"88" }}>{src} · {upd}</div>
+                  </div>
+                );
+              };
+
+              const SectorBar = ({ label, ticker, data, src, upd }) => {
+                const maxRS = 15; // scale bar ±15%
+                if (!data) return (
+                  <div style={{ background: C.surface, border:`1px solid ${C.border}`, borderRadius: 8, padding:"14px 16px" }}>
+                    <div style={{ fontFamily: mono, fontSize: 11, color: C.muted, marginBottom: 6, textTransform:"uppercase", letterSpacing:"0.07em" }}>{label}</div>
+                    <div style={{ fontFamily: mono, fontSize: 12, color: C.muted }}>— run scan</div>
+                  </div>
+                );
+                const lc  = leaderColor(data.leadership);
+                const chgCol = data.change > 0 ? C.green : data.change < 0 ? C.red : C.muted;
+                const rs4wSafe = isNaN(data.rs4w) ? 0 : data.rs4w;
+                const barPct = Math.min(100, Math.max(0, ((rs4wSafe + maxRS) / (maxRS * 2)) * 100));
+                const barCol = rs4wSafe > 2 ? C.green : rs4wSafe < -2 ? C.red : C.amber;
+                const ma50  = maLabel(data.ma50pos);
+                const ma200 = maLabel(data.ma200pos);
+                return (
+                  <div style={{ background: C.surface, border:`1px solid ${lc}44`, borderRadius: 8, padding:"14px 16px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                      <div style={{ fontFamily: mono, fontSize: 11, color: C.muted, textTransform: "uppercase", letterSpacing: "0.07em" }}>{label}</div>
+                      <span style={{ fontFamily: mono, fontSize: 10, color: lc, background: lc+"18", border:`0.5px solid ${lc}44`, borderRadius: 3, padding: "1px 7px", textTransform: "uppercase" }}>{data.leadership || "—"}</span>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 4 }}>
+                      <div style={{ fontFamily: "Inter", fontWeight: 700, fontSize: 24, color: C.text }}>{data.price}</div>
+                      <div style={{ fontFamily: mono, fontSize: 12, color: chgCol }}>{data.change > 0 ? "▲" : "▼"} {Math.abs(data.change).toFixed(2)}%</div>
+                    </div>
+
+                    {/* RS4w bar */}
+                    <div style={{ marginBottom: 8 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontFamily: mono, fontSize: 9, color: C.muted, marginBottom: 3 }}>
+                        <span>4-week RS vs SPY</span>
+                        <span style={{ color: barCol }}>{rs4wSafe > 0 ? "+" : ""}{rs4wSafe.toFixed(1)}%</span>
+                      </div>
+                      <div style={{ background: C.border, borderRadius: 3, height: 5, position: "relative" }}>
+                        <div style={{ position: "absolute", left: "50%", top: -1, width: 1, height: 7, background: C.muted+"66" }} />
+                        <div style={{
+                          position: "absolute",
+                          left: rs4wSafe >= 0 ? "50%" : `${barPct}%`,
+                          width: `${Math.abs(rs4wSafe) / (maxRS * 2) * 100}%`,
+                          height: "100%",
+                          background: barCol,
+                          borderRadius: 3,
+                        }} />
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontFamily: mono, fontSize: 8, color: C.muted+"66", marginTop: 2 }}>
+                        <span>-{maxRS}%</span><span>0</span><span>+{maxRS}%</span>
+                      </div>
+                    </div>
+
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 6 }}>
+                      <span style={{ fontFamily: mono, fontSize: 9, padding: "2px 7px", borderRadius: 3, background: ma50.color+"18", color: ma50.color, border:`0.5px solid ${ma50.color}44` }}>{ma50.label} 50d</span>
+                      <span style={{ fontFamily: mono, fontSize: 9, padding: "2px 7px", borderRadius: 3, background: ma200.color+"18", color: ma200.color, border:`0.5px solid ${ma200.color}44` }}>{ma200.label} 200d</span>
+                      {!isNaN(data.voltrend) && <span style={{ fontFamily: mono, fontSize: 9, padding: "2px 7px", borderRadius: 3, background: (data.voltrend > 10 ? C.green : C.muted)+"18", color: data.voltrend > 10 ? C.green : C.muted, border:`0.5px solid ${(data.voltrend > 10 ? C.green : C.muted)}44` }}>Vol {data.voltrend > 0 ? "+" : ""}{data.voltrend.toFixed(0)}%</span>}
+                    </div>
+                    {!isNaN(data.pos52w) && <div style={{ fontFamily: mono, fontSize: 10, color: data.pos52w > -5 ? C.green : data.pos52w > -15 ? C.amber : C.red }}>{Math.abs(data.pos52w).toFixed(1)}% from 52w high</div>}
+                    <div style={{ marginTop: 8, fontSize: 10, fontFamily: mono, color: C.muted+"88" }}>{src} · {upd}</div>
+                  </div>
+                );
+              };
+
+              return (
+                <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+
+                  {/* Liquidity-Price Alignment banner */}
+                  <div style={{ background: C.surface, border: `1px solid ${alignConfig.color}44`, borderRadius: 8, padding: "14px 20px", display: "flex", alignItems: "center", gap: 14 }}>
+                    <div style={{ width: 10, height: 10, borderRadius: "50%", background: alignConfig.color, boxShadow: `0 0 6px ${alignConfig.color}88`, flexShrink: 0 }} />
+                    <div>
+                      <div style={{ fontFamily: "Inter", fontWeight: 700, fontSize: 14, color: alignConfig.color }}>{alignConfig.icon} {alignConfig.label}</div>
+                      <div style={{ fontFamily: mono, fontSize: 11, color: C.muted, marginTop: 2 }}>{alignConfig.sub}</div>
+                    </div>
+                    <div style={{ marginLeft: "auto", fontFamily: mono, fontSize: 10, color: C.muted, textAlign: "right" }}>
+                      <div>Liquidity × Price</div>
+                      <div>Alignment Signal</div>
+                    </div>
+                  </div>
+
+                  {/* Broad Market */}
+                  <div>
+                    <SectionLabel>Broad Market — SPY · QQQ · IWM</SectionLabel>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(200px,1fr))", gap: 12 }}>
+                      <BroadCard label="S&P 500 (SPY)"    ticker="SPY" data={spy}  src={d.mkt_SPY?.source}  upd={d.mkt_SPY?.updatedAt}  />
+                      <BroadCard label="Nasdaq 100 (QQQ)" ticker="QQQ" data={qqq}  src={d.mkt_QQQ?.source}  upd={d.mkt_QQQ?.updatedAt}  />
+                      <BroadCard label="Russell 2000 (IWM)" ticker="IWM" data={iwm} src={d.mkt_IWM?.source} upd={d.mkt_IWM?.updatedAt} />
+                    </div>
+                  </div>
+
+                  {/* Sector Leadership */}
+                  <div>
+                    <SectionLabel>Sector Leadership vs SPY — 4-Week Relative Strength</SectionLabel>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(200px,1fr))", gap: 12 }}>
+                      <SectorBar label="Space & Drones (ARKX)" ticker="ARKX" data={arkx} src={d.mkt_ARKX?.source} upd={d.mkt_ARKX?.updatedAt} />
+                      <SectorBar label="Semis (SMH)"            ticker="SMH"  data={smh}  src={d.mkt_SMH?.source}  upd={d.mkt_SMH?.updatedAt}  />
+                      <SectorBar label="Energy (XLE)"           ticker="XLE"  data={xle}  src={d.mkt_XLE?.source}  upd={d.mkt_XLE?.updatedAt}  />
+                    </div>
+                  </div>
+
+                  {/* Early Trend Signals guide */}
+                  <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: "14px 20px" }}>
+                    <SectionLabel>Reading Early Trend Signals</SectionLabel>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                      {[
+                        { label: "Breadth confirmation",    color: C.green,     body: "Sector above 50d + 200d MA = institutional positioning. Volume spike (>20% above avg) = real money, not headlines." },
+                        { label: "Liquidity alignment",     color: C.chartBlue, body: "Aligned-bull = SPY rising WITH expanding Fed balance sheet. The most reliable macro-backed moves look like this." },
+                        { label: "Relative strength lead",  color: C.amber,     body: "4w RS vs SPY >+2% = sector leadership emerging. ARKX or SMH leading before Twitter notices = early signal." },
+                        { label: "Divergence warning",      color: C.red,       body: "Price up + liquidity contracting = fragile. Often reverses within 2-4 weeks when the tide goes out." },
+                      ].map((tip, i) => (
+                        <div key={i} style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+                          <div style={{ width: 3, height: "100%", minHeight: 14, background: tip.color, borderRadius: 2, flexShrink: 0, marginTop: 3 }} />
+                          <div>
+                            <span style={{ fontFamily: mono, fontSize: 11, color: tip.color, fontWeight: 700 }}>{tip.label}: </span>
+                            <span style={{ fontFamily: mono, fontSize: 11, color: C.muted }}>{tip.body}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                </div>
+              );
+            })()}
 
             {/* ── MACRO ── */}
             {tab === "macro" && (
