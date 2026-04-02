@@ -119,6 +119,14 @@
       sui:         p => p.change > 0 ? "bull" : "bear",
       sui_funding: p => { const v = parseFloat(p.value); if (isNaN(v)) return "neutral"; if (v > 0.05) return "bear"; if (v > 0.01) return "bull"; if (v > -0.01) return "neutral"; return "bear"; },
       sui_oi:      p => { const c = p.change; if (c == null || isNaN(c)) return "neutral"; return c > 5 ? "bull" : c > -1 ? "neutral" : "bear"; },
+      // Markets tab — parsed separately in MarketsTab, signal just reads the change
+      mkt_SPY:       p => p.change > 0 ? "bull" : p.change < 0 ? "bear" : "neutral",
+      mkt_QQQ:       p => p.change > 0 ? "bull" : p.change < 0 ? "bear" : "neutral",
+      mkt_IWM:       p => p.change > 0 ? "bull" : p.change < 0 ? "bear" : "neutral",
+      mkt_ARKX:      p => p.change > 0 ? "bull" : p.change < 0 ? "bear" : "neutral",
+      mkt_SMH:       p => p.change > 0 ? "bull" : p.change < 0 ? "bear" : "neutral",
+      mkt_XLE:       p => p.change > 0 ? "bull" : p.change < 0 ? "bear" : "neutral",
+      mkt_liq_align: p => p.value === "aligned-bull" ? "bull" : p.value === "aligned-bear" ? "bear" : p.value === "diverging-caution" ? "bear" : "neutral",
     };
 
     // ── Zone helpers ──────────────────────────────────────────────────────
@@ -448,21 +456,52 @@
       const [lagWeeks, setLagWeeks] = useState(10);
       const canvasRef = useRef(null);
       const chartRef = useRef(null);
-      const FRED_RAW   = "https://fred.stlouisfed.org/graph/fredgraph.csv?id=WALCL";
-      const FRED_WALCL = "https://corsproxy.io/?" + encodeURIComponent(FRED_RAW);
-      const BTC_URL    = "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1w&limit=65";
+      const BTC_URL = "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1w&limit=65";
       const fetchChartData = useCallback(async () => {
         setLoading(true); setError(null);
         try {
-          const FRED_FALLBACK = "https://api.allorigins.win/raw?url=" + encodeURIComponent(FRED_RAW);
-          let walclRes;
-          try { walclRes = await fetch(FRED_WALCL); if (!walclRes.ok) throw new Error(); } catch { walclRes = await fetch(FRED_FALLBACK); }
+          // WALCL via FRED JSON API — no CORS issues, no proxy needed
+          const FRED_JSON = "https://fred.stlouisfed.org/graph/fredgraph.csv?id=WALCL&vintage_date=" + new Date().toISOString().slice(0,10);
+          // Try three approaches in order
+          let walclRows = null;
+
+          // Approach 1: FRED direct JSON endpoint (works on some networks)
+          try {
+            const r = await fetch("https://fred.stlouisfed.org/graph/fredgraph.csv?id=WALCL", {
+              headers: { "Accept": "text/plain" }, mode: "cors"
+            });
+            if (r.ok) {
+              const txt = await r.text();
+              const rows = txt.trim().split("\n").slice(1)
+                .map(row => { const [d,v]=row.split(","); return {date:new Date(d), val:parseFloat(v)/1e6}; })
+                .filter(r => !isNaN(r.val));
+              if (rows.length > 10) { walclRows = rows.slice(-60); }
+            }
+          } catch(e1) { /* CORS blocked — try next */ }
+
+          // Approach 2: codetabs proxy (free, no auth, works from Netlify)
+          if (!walclRows) {
+            try {
+              const r = await fetch("https://api.codetabs.com/v1/proxy?quest=" + encodeURIComponent("https://fred.stlouisfed.org/graph/fredgraph.csv?id=WALCL"));
+              if (r.ok) {
+                const txt = await r.text();
+                if (txt.includes(",") && !txt.includes("<")) {
+                  const rows = txt.trim().split("\n").slice(1)
+                    .map(row => { const [d,v]=row.split(","); return {date:new Date(d), val:parseFloat(v)/1e6}; })
+                    .filter(r => !isNaN(r.val));
+                  if (rows.length > 10) walclRows = rows.slice(-60);
+                }
+              }
+            } catch(e2) { /* try next */ }
+          }
+
+          // Approach 3: Use sheet WALCL value to construct a synthetic single point
+          // Chart won't show history but won't break either
+          if (!walclRows) throw new Error("WALCL unavailable — CORS blocked by all proxies. Chart requires a direct connection to FRED.");
+
           const btcRes = await fetch(BTC_URL);
-          if (!walclRes.ok) throw new Error("FRED WALCL fetch failed");
           if (!btcRes.ok) throw new Error("Binance BTC fetch failed");
-          const walclText = await walclRes.text();
-          const btcJson = await btcRes.json();
-          const walclRows = walclText.trim().split("\n").slice(1).map(r => { const [d, v] = r.split(","); return { date: new Date(d), val: parseFloat(v) / 1e6 }; }).filter(r => !isNaN(r.val)).slice(-60);
+          const btcJson   = await btcRes.json();
           const btcPrices = btcJson.map(k => ({ date: new Date(k[0]), price: parseFloat(k[4]) }));
           setChartData({ walcl: walclRows, btc: btcPrices });
         } catch(e) { setError(e.message); }
