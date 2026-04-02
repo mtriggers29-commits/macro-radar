@@ -27,7 +27,7 @@
     const { useState, useCallback, useRef, useEffect } = React;
 
     // ── Sheet config ──────────────────────────────────────────────────────
-    const CLAUDE_API = "https://api.anthropic.com/v1/messages";
+    const CLAUDE_API = "https://api.groq.com/openai/v1/chat/completions";
     // ── API key management ────────────────────────────────────────────────────
     // Anthropic API requires a key — stored in localStorage, never in the code.
     // User enters it once via the key prompt. Set ANTHROPIC_KEY='' to clear.
@@ -770,10 +770,10 @@ Priority patterns: Morning Star, Bullish/Bearish Engulfing, Three White Soldiers
 Respond ONLY in valid JSON (no markdown):
 {"scanDate":"","tf":"","signals":[{"ticker":"","assetName":"","pattern":"","direction":"bull|bear","timeframe":"Weekly|Monthly","patternAge":"confirmed|forming|1 candle old","rsiValue":42,"rsiDivergence":false,"volumeRatio":1.35,"atrBodyRatio":1.8,"extensionPct":8.5,"confluence":{"ma200":"bull|bear|na","above20dMA":true,"above20mMA":false,"rsi":"bull|bear|neutral"},"thesis":"2 sentences specific to this asset and setup","entryZone":"","stopLoss":"","target":"","keyLevel":"specific price level significance"}]}`;
         try {
-          const res = await fetch(CLAUDE_API,{method:"POST",headers:{"Content-Type":"application/json","x-api-key":getApiKey(),"anthropic-version":"2023-06-01"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:2400,messages:[{role:"user",content:prompt}]})});
+          const res = await fetch(CLAUDE_API,{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+getApiKey()},body:JSON.stringify({model:"llama-3.3-70b-versatile",max_tokens:2400,messages:[{role:"user",content:prompt}]})});
           const data = await res.json();
-          if(data.error) throw new Error(data.error.message);
-          const raw = (data.content||[]).filter(b=>b.type==="text").map(b=>b.text).join("").replace(/```json|```/g,"").trim();
+          if(data.error) throw new Error(data.error.message||JSON.stringify(data.error)); if(!data.choices||!data.choices[0]) throw new Error("No response from Groq — check your API key");
+          const raw = (data.choices&&data.choices[0]&&data.choices[0].message.content||"").replace(/```json|```/g,"").trim();
           const parsed = JSON.parse(raw);
           const scored = (parsed.signals||[]).map(s=>({...s,...scoreSignal(s,liq)})).sort((a,b)=>b.score-a.score);
           setScoredSignals(scored); setScanMeta({...parsed,count:scored.length});
@@ -808,9 +808,9 @@ BEFORE YOU TOUCH THE BUY BUTTON
 
 2-4 sentences each. Use £500 position example. Warm, honest, no hype.`;
         try {
-          const res=await fetch(CLAUDE_API,{method:"POST",headers:{"Content-Type":"application/json","x-api-key":getApiKey(),"anthropic-version":"2023-06-01"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1000,messages:[{role:"user",content:prompt}]})});
-          const d=await res.json(); if(d.error) throw new Error(d.error.message);
-          const txt=(d.content||[]).filter(b=>b.type==="text").map(b=>b.text).join("").trim();
+          const res=await fetch(CLAUDE_API,{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+getApiKey()},body:JSON.stringify({model:"llama-3.3-70b-versatile",max_tokens:1000,messages:[{role:"user",content:prompt}]})});
+          const d=await res.json(); if(d.error) throw new Error(d.error.message||JSON.stringify(d.error)); if(!d.choices||!d.choices[0]) throw new Error("No response from Groq — check your API key");
+          const txt=(d.choices&&d.choices[0]&&d.choices[0].message.content||"").trim();
           setCoachText(prev=>({...prev,[idx]:txt})); setExpandedIdx(idx);
         } catch(e){ setCoachText(prev=>({...prev,[idx]:"⚠ "+e.message})); }
         setCoachLoading(null);
@@ -973,10 +973,10 @@ Consider: current price action, macro tailwinds/headwinds, volatility regime, mo
 Respond ONLY valid JSON no markdown:
 {"scanDate":"","marketRegime":"1 sentence","trades":[{"rank":1,"ticker":"","assetName":"","category":"crypto|space|tech|commodity","direction":"long|short","setup":"eg Bull flag retest","conviction":82,"thesis":"2 sentences max","entryZone":"","stopLoss":"","target1":"","target2":"","rrRatio":"","timeframe":"","robinhoodSteps":"1. ... 2. ... 3. ...","catalyst":""}]}`;
         try {
-          const res = await fetch(CLAUDE_API, { method:"POST", headers:{"Content-Type":"application/json","x-api-key":getApiKey(),"anthropic-version":"2023-06-01"}, body: JSON.stringify({ model:"claude-sonnet-4-20250514", max_tokens:2200, messages:[{role:"user",content:prompt}] }) });
+          const res = await fetch(CLAUDE_API, { method:"POST", headers:{"Content-Type":"application/json","Authorization":"Bearer "+getApiKey()}, body: JSON.stringify({ model:"llama-3.3-70b-versatile", max_tokens:2200, messages:[{role:"user",content:prompt}] }) });
           const data = await res.json();
-          if (data.error) throw new Error(data.error.message);
-          const raw = (data.content||[]).filter(b=>b.type==="text").map(b=>b.text).join("").replace(/```json|```/g,"").trim();
+          if(data.error) throw new Error(data.error.message||JSON.stringify(data.error)); if(!data.choices||!data.choices[0]) throw new Error("No response from Groq — check your API key");
+          const raw = (data.choices&&data.choices[0]&&data.choices[0].message.content||"").replace(/```json|```/g,"").trim();
           const parsed = JSON.parse(raw);
           setTrades(parsed.trades || []);
           setTradesMeta(parsed);
@@ -1005,10 +1005,10 @@ HOW TO KNOW WHEN TO EXIT
 
 2-4 sentences each. Warm but honest. Use £500 example. No hype.`;
         try {
-          const res = await fetch(CLAUDE_API, { method:"POST", headers:{"Content-Type":"application/json","x-api-key":getApiKey(),"anthropic-version":"2023-06-01"}, body: JSON.stringify({ model:"claude-sonnet-4-20250514", max_tokens:1000, messages:[{role:"user",content:prompt}] }) });
+          const res = await fetch(CLAUDE_API, { method:"POST", headers:{"Content-Type":"application/json","Authorization":"Bearer "+getApiKey()}, body: JSON.stringify({ model:"llama-3.3-70b-versatile", max_tokens:1000, messages:[{role:"user",content:prompt}] }) });
           const data = await res.json();
-          if (data.error) throw new Error(data.error.message);
-          const txt = (data.content||[]).filter(b=>b.type==="text").map(b=>b.text).join("").trim();
+          if(data.error) throw new Error(data.error.message||JSON.stringify(data.error)); if(!data.choices||!data.choices[0]) throw new Error("No response from Groq — check your API key");
+          const txt = (data.choices&&data.choices[0]&&data.choices[0].message.content||"").trim();
           setTradeCoach(prev => ({ ...prev, [idx]: txt }));
         } catch(e) { setTradeCoach(prev => ({ ...prev, [idx]: "⚠ " + e.message })); }
         setTradeCoachLoading(null);
@@ -1246,10 +1246,10 @@ HOW TO KNOW WHEN TO EXIT
           const headlines = catalysts.map((c, i) => `${i+1}. [${(c.topic||"news").toUpperCase()}] ${c.title} (${c.source})`).join("\n");
           const ctx = [data.y10,data.y2,data.spread,data.dxy,data.vix,data.cpi,data.ism,data.btc,data.dom,data.fg,data.funding].map((d,i) => { const keys=["y10","y2","spread","dxy","vix","cpi","ism","btc","dom","fg","funding"]; return d ? `${keys[i]}: ${d.value}` : null; }).filter(Boolean).join(" · ");
           const prompt = `You are a macro and crypto markets analyst. Live indicators: ${ctx}\n\nToday's top headlines:\n${headlines}\n\nWrite a concise 5-bullet analyst briefing:\n• Dominant macro theme and what it means for risk assets\n• Direct Bitcoin/crypto implication from the news\n• Key level or data point to watch this week\n• Regime signal: risk-on / risk-off / mixed — and why\n• One actionable takeaway for a BTC/ETH/SUI portfolio\n\nBe specific. Reference actual numbers. No generic statements. Max 2 sentences per bullet.`;
-          const response = await fetch(CLAUDE_API, { method:"POST", headers:{"Content-Type":"application/json","x-api-key":getApiKey(),"anthropic-version":"2023-06-01"}, body: JSON.stringify({ model:"claude-sonnet-4-20250514", max_tokens:800, messages:[{role:"user",content:prompt}] }) });
+          const response = await fetch(CLAUDE_API, { method:"POST", headers:{"Content-Type":"application/json","Authorization":"Bearer "+getApiKey()}, body: JSON.stringify({ model:"llama-3.3-70b-versatile", max_tokens:800, messages:[{role:"user",content:prompt}] }) });
           const d2 = await response.json();
-          if (d2.error) throw new Error(d2.error.message);
-          const txt = (d2.content||[]).filter(b=>b.type==="text").map(b=>b.text).join("\n").trim();
+          if(d2.error) throw new Error(d2.error.message||JSON.stringify(d2.error)); if(!d2.choices||!d2.choices[0]) throw new Error("No response from Groq — check your API key");
+          const txt = (d2.choices&&d2.choices[0]&&d2.choices[0].message.content||"").trim();
           setAiSummary(txt || "No summary returned.");
         } catch(e) { setAiSummary("⚠ Interpret failed: " + e.message); }
         setAiLoading(false);
@@ -1319,23 +1319,23 @@ HOW TO KNOW WHEN TO EXIT
           {showKeyModal && (
             <div style={{ position: "fixed", inset: 0, background: "#000000cc", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
               <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: "28px 32px", width: "100%", maxWidth: 480 }}>
-                <div style={{ fontFamily: sans, fontWeight: 700, fontSize: 16, color: C.text, marginBottom: 8 }}>Anthropic API Key</div>
+                <div style={{ fontFamily: sans, fontWeight: 700, fontSize: 16, color: C.text, marginBottom: 8 }}>Groq API Key (Free)</div>
                 <div style={{ fontFamily: mono, fontSize: 11, color: C.muted, lineHeight: 1.8, marginBottom: 20 }}>
                   Required for AI features: Pattern Scan, Top 5 Trades, Coach, Interpret.<br/>
-                  Get a free key + $5 credit at <span style={{ color: C.blue }}>console.anthropic.com</span><br/>
+                  Get a completely free key at <span style={{ color: C.blue }}>console.groq.com</span> — no card needed<br/>
                   Stored locally in your browser only — never sent anywhere except Anthropic.
                 </div>
                 <input
                   type="password"
-                  placeholder="sk-ant-api03-..."
+                  placeholder="gsk_..."
                   value={keyInput}
                   onChange={e => setKeyInput(e.target.value)}
                   style={{ width: "100%", background: C.bg, border: `1px solid ${C.border}`, borderRadius: 6, padding: "10px 14px", fontFamily: mono, fontSize: 12, color: C.text, marginBottom: 16, outline: "none" }}
                 />
                 <div style={{ display: "flex", gap: 10 }}>
                   <button onClick={() => {
-                    if (keyInput.startsWith("sk-ant-")) { setApiKey(keyInput); setHasKey(true); setShowKeyModal(false); setKeyInput(""); }
-                    else alert("Key should start with sk-ant-");
+                    if (keyInput.startsWith("gsk_")) { setApiKey(keyInput); setHasKey(true); setShowKeyModal(false); setKeyInput(""); }
+                    else alert("Groq key should start with gsk_");
                   }} style={{ flex: 1, background: C.blue, color: "#0d1117", fontFamily: mono, fontWeight: 700, fontSize: 12, border: "none", borderRadius: 6, padding: "10px 0", cursor: "pointer" }}>Save Key</button>
                   {hasKey && <button onClick={() => { clearApiKey(); setHasKey(false); setShowKeyModal(false); }} style={{ background: C.red+"22", color: C.red, fontFamily: mono, fontSize: 11, border: `1px solid ${C.red}44`, borderRadius: 6, padding: "10px 16px", cursor: "pointer" }}>Remove</button>}
                   <button onClick={() => { setShowKeyModal(false); setKeyInput(""); }} style={{ background: C.border, color: C.muted, fontFamily: mono, fontSize: 11, border: "none", borderRadius: 6, padding: "10px 16px", cursor: "pointer" }}>Cancel</button>
