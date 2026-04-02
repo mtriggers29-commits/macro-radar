@@ -27,13 +27,7 @@
     const { useState, useCallback, useRef, useEffect } = React;
 
     // ── Sheet config ──────────────────────────────────────────────────────
-    // ── API endpoint — auto-routes through local proxy on localhost ───────────
-    // On Claude.ai artifact sandbox: direct call to Anthropic works (CORS allowed).
-    // On localhost: proxy.js intercepts /api/anthropic and injects the API key.
-    const IS_LOCAL   = location.hostname === "localhost" || location.hostname === "127.0.0.1";
-    const CLAUDE_API = IS_LOCAL
-      ? "/api/anthropic/v1/messages"
-      : CLAUDE_API;
+    const CLAUDE_API = "https://api.anthropic.com/v1/messages";
 
     const SHEET_ID     = "1hGTwlIhPwi12-vjqaA92umV2oFgjU9aa-ffCoFNUQS8";
     const SHEET_CSV    = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=582118687`;
