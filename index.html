@@ -127,6 +127,12 @@
       mkt_SMH:       p => p.change > 0 ? "bull" : p.change < 0 ? "bear" : "neutral",
       mkt_XLE:       p => p.change > 0 ? "bull" : p.change < 0 ? "bear" : "neutral",
       mkt_liq_align: p => p.value === "aligned-bull" ? "bull" : p.value === "aligned-bear" ? "bear" : p.value === "diverging-caution" ? "bear" : "neutral",
+      mkt_XLI:       p => p.change > 0 ? "bull" : p.change < 0 ? "bear" : "neutral",
+      mkt_XLV:       p => p.change > 0 ? "bull" : p.change < 0 ? "bear" : "neutral",
+      mkt_XLP:       p => p.change > 0 ? "bull" : p.change < 0 ? "bear" : "neutral",
+      mkt_XLB:       p => p.change > 0 ? "bull" : p.change < 0 ? "bear" : "neutral",
+      mkt_GLD:       p => p.change > 0 ? "bull" : p.change < 0 ? "bear" : "neutral",
+      mkt_TLT:       p => p.change > 0 ? "bull" : p.change < 0 ? "bear" : "neutral",
     };
 
     // ── Zone helpers ──────────────────────────────────────────────────────
@@ -743,20 +749,20 @@
       const isBull = direction === "bull";
       const CYCLE_BIAS = {
         expansion: {
-          bull: ["BTC","ETH","SUI","QQQ","SMH","mkt_SMH","mkt_QQQ","PLTR","SMCI","IWM","mkt_IWM","ARKX","mkt_ARKX","RKLB","JOBY"],
-          bear: ["GLD","mkt_XLE","USO","UNG"],
+          bull: ["BTC","ETH","SUI","QQQ","SMH","mkt_SMH","mkt_QQQ","PLTR","SMCI","IWM","mkt_IWM","ARKX","mkt_ARKX","RKLB","JOBY","XLI","mkt_XLI","XLB","mkt_XLB"],
+          bear: ["GLD","mkt_GLD","TLT","mkt_TLT","XLP","mkt_XLP","XLU"],
         },
         lateCycle: {
-          bull: ["GLD","mkt_GLD","XLE","mkt_XLE","USO","UNG"],
-          bear: ["BTC","ETH","SUI","QQQ","mkt_QQQ","PLTR","SMCI"],
+          bull: ["GLD","mkt_GLD","XLE","mkt_XLE","USO","UNG","XLV","mkt_XLV","XLP","mkt_XLP","XLB","mkt_XLB"],
+          bear: ["BTC","ETH","SUI","QQQ","mkt_QQQ","PLTR","SMCI","XLY"],
         },
         contraction: {
-          bull: ["GLD","USO"],
-          bear: ["BTC","ETH","SUI","RKLB","JOBY","PLTR","SMCI","SMH","mkt_SMH","mkt_QQQ","IWM","mkt_IWM","ARKX","mkt_ARKX"],
+          bull: ["GLD","mkt_GLD","TLT","mkt_TLT","XLV","mkt_XLV","XLP","mkt_XLP"],
+          bear: ["BTC","ETH","SUI","RKLB","JOBY","PLTR","SMCI","SMH","mkt_SMH","mkt_QQQ","IWM","mkt_IWM","ARKX","mkt_ARKX","XLI","mkt_XLI","XLB","mkt_XLB"],
         },
         recovery: {
-          bull: ["BTC","ETH","SUI","ARKX","mkt_ARKX","RKLB","JOBY","IWM","mkt_IWM","GLD"],
-          bear: ["USO","UNG","XLE","mkt_XLE"],
+          bull: ["BTC","ETH","SUI","ARKX","mkt_ARKX","RKLB","JOBY","IWM","mkt_IWM","GLD","mkt_GLD","XLI","mkt_XLI"],
+          bear: ["USO","UNG","XLE","mkt_XLE","XLP","mkt_XLP","TLT","mkt_TLT"],
         },
       };
       const bias = CYCLE_BIAS[phase] || CYCLE_BIAS.expansion;
@@ -1613,6 +1619,12 @@ HOW TO KNOW WHEN TO EXIT
               const arkx = parseSector(d.mkt_ARKX?.value);
               const smh  = parseSector(d.mkt_SMH?.value);
               const xle  = parseSector(d.mkt_XLE?.value);
+              const xli  = parseSector(d.mkt_XLI?.value);
+              const xlv  = parseSector(d.mkt_XLV?.value);
+              const xlp  = parseSector(d.mkt_XLP?.value);
+              const xlb  = parseSector(d.mkt_XLB?.value);
+              const gld  = parseSector(d.mkt_GLD?.value);
+              const tlt  = parseSector(d.mkt_TLT?.value);
               const align = d.mkt_liq_align?.value || null;
 
               // ── Colour helpers ──────────────────────────────────────────
@@ -1732,12 +1744,18 @@ HOW TO KNOW WHEN TO EXIT
                   {/* ── Sector Leadership table ── */}
                   <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,overflow:"hidden"}}>
                     <div style={{padding:"10px 16px",borderBottom:`1px solid ${C.border}`,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-                      <span style={{fontFamily:mono,fontSize:10,color:C.muted,textTransform:"uppercase",letterSpacing:"0.09em"}}>Sector Leadership</span>
-                      <span style={{fontFamily:mono,fontSize:9,color:C.muted}}>4-week RS vs SPY · MA position · Leader/Lagger status</span>
+                      <span style={{fontFamily:mono,fontSize:10,color:C.muted,textTransform:"uppercase",letterSpacing:"0.09em"}}>Sector Leadership — 9 sectors</span>
+                      <span style={{fontFamily:mono,fontSize:9,color:C.muted}}>4-week RS vs SPY · Sorted by cycle relevance · Leader/Lagger</span>
                     </div>
                     <MktRow label="Space & Drones" ticker="ARKX" data={arkx} isSector />
                     <MktRow label="Semis"           ticker="SMH"  data={smh}  isSector />
+                    <MktRow label="Industrials"     ticker="XLI"  data={xli}  isSector />
+                    <MktRow label="Materials"       ticker="XLB"  data={xlb}  isSector />
                     <MktRow label="Energy"          ticker="XLE"  data={xle}  isSector />
+                    <MktRow label="Healthcare"      ticker="XLV"  data={xlv}  isSector />
+                    <MktRow label="Consumer Staples" ticker="XLP" data={xlp}  isSector />
+                    <MktRow label="Gold"            ticker="GLD"  data={gld}  isSector />
+                    <MktRow label="Long Bonds"      ticker="TLT"  data={tlt}  isSector />
                   </div>
 
                   {/* ── Quick read legend ── */}
