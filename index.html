@@ -636,26 +636,148 @@
     ];
 
     // ── Pattern Scanner v2 — 7-filter weighted conviction engine ─────────────
+    // ── Scoring engine v2 — recalibrated scale ───────────────────────────────
+    // Design principle: 100 = theoretically perfect, practically unreachable.
+    // Best real-world signals land 75–87. 90+ requires every single factor perfect.
+    // This gives scores like 79, 83, 71 — meaningful differentiation vs old 100/100/100.
+    //
+    // Architecture:
+    //   Base score  = pattern win rate remapped to 38–52 (not 62–78)
+    //   7 filters   = max +35 total (not +90), each worth less individually
+    //   Cycle align = ±8 pts — biggest single modifier, silent
+    //   Theoretical max: 52 + 35 + 8 = 95 (requires perfect everything)
+    //   Realistic strong signal: ~75–85
+    //   100 = essentially impossible in practice
+
     const FILTER_WEIGHTS = {
-      volume:     { pass: 15, fail: -8,  label: "Volume Conviction",   tip: "Weekly vol > 120% of 10-week avg" },
-      trend:      { pass: 15, fail: -10, label: "Trend Alignment",     tip: "Price above 20d + 20-month MA" },
-      atr:        { pass: 10, fail: -10, label: "ATR Body Filter",     tip: "Candle body > 1.5× weekly ATR" },
-      divergence: { pass: 20, fail: 0,   label: "RSI Divergence",      tip: "Price/RSI divergence confirmed" },
-      liquidity:  { pass: 15, fail: -15, label: "Liquidity Regime",    tip: "Net liquidity trending with signal direction" },
-      weekClose:  { pass: 5,  fail: -20, label: "Weekly Close Rule",   tip: "Pattern confirmed after weekly candle close" },
-      extension:  { pass: 10, fail: -12, label: "Extension Score",     tip: "Price within 25% of 20-week SMA" },
+      volume:     { pass: 7,  fail: -5,  label: "Volume Conviction",  tip: "Weekly vol > 120% of 10-week avg" },
+      trend:      { pass: 7,  fail: -6,  label: "Trend Alignment",    tip: "Price above 20d + 20-month MA" },
+      atr:        { pass: 5,  fail: -5,  label: "ATR Body Filter",    tip: "Candle body > 1.5× weekly ATR" },
+      divergence: { pass: 9,  fail: 0,   label: "RSI Divergence",     tip: "Price/RSI divergence confirmed — rarest, highest value" },
+      liquidity:  { pass: 6,  fail: -7,  label: "Liquidity Regime",   tip: "Net liquidity trending with signal direction" },
+      weekClose:  { pass: 3,  fail: -10, label: "Weekly Close Rule",  tip: "Pattern confirmed after weekly candle close" },
+      extension:  { pass: 4,  fail: -5,  label: "Extension Score",    tip: "Price within 25% of 20-week SMA — not overextended" },
     };
+
+    // Base win rates remapped: old 62–78 → new 38–52
+    // This leaves meaningful room above 52 for filters and cycle to push score up
     const BASE_CONVICTION_MAP = {
+      "Morning Star":52,        "Evening Star":51,
+      "Three White Soldiers":50,"Three Black Crows":49,
+      "Bullish Engulfing":48,   "Bearish Engulfing":47,
+      "Hammer":46,              "Shooting Star":45,
+      "Pin Bar":44,             "Inside Bar":42,
+      "Bullish Harami":41,      "Doji":38,
+    };
+
+    // Historical win rate for display (unchanged — shown on card)
+    const HISTORICAL_WR = {
       "Morning Star":78,"Evening Star":77,"Three White Soldiers":76,"Three Black Crows":75,
       "Bullish Engulfing":74,"Bearish Engulfing":73,"Hammer":72,"Shooting Star":71,
       "Pin Bar":70,"Inside Bar":68,"Bullish Harami":65,"Doji":62,
     };
+
+    // ── Business cycle detector ─────────────────────────────────────────────
+    // Uses live sheet data. Silent — folds into score without displaying phase.
+    // Phase → which assets benefit:
+    //   expansion:    crypto, semis, tech, small caps, growth
+    //   late-cycle:   energy, gold, materials — growth fades
+    //   contraction:  gold, bonds, defensives — risk assets punished
+    //   recovery:     crypto, ARKX, growth lead — energy lags
+    function detectCyclePhase(sd) {
+      const ism      = parseFloat(sd.ism?.value);
+      const vix      = parseFloat(sd.vix?.value);
+      const walclChg = parseFloat(sd.walcl?.change);
+      const spread   = parseFloat(sd.spread?.value);  // 10Y-2Y yield spread
+      const dxyChg   = parseFloat(sd.dxy?.change);
+      const fgVal    = parseFloat(sd.fg?.value);
+
+      // Score each phase 0-4 (higher = stronger match)
+      let scores = { expansion:0, lateCycle:0, contraction:0, recovery:0 };
+
+      // ISM Manufacturing PMI
+      if (!isNaN(ism)) {
+        if (ism >= 53)       scores.expansion  += 2;
+        else if (ism >= 50)  scores.expansion  += 1;
+        else if (ism >= 47)  scores.lateCycle  += 1;
+        else                 scores.contraction+= 2;
+      }
+      // VIX
+      if (!isNaN(vix)) {
+        if (vix < 15)        scores.expansion  += 1;
+        else if (vix < 20)   scores.expansion  += 0.5;
+        else if (vix < 30)   scores.lateCycle  += 1;
+        else                 scores.contraction+= 2;
+      }
+      // Fed balance sheet
+      if (!isNaN(walclChg)) {
+        if (walclChg > 0.5)  { scores.expansion += 1; scores.recovery += 1; }
+        else if (walclChg < -0.5) scores.contraction += 1;
+      }
+      // Yield curve (inverted = late cycle / contraction)
+      if (!isNaN(spread)) {
+        if (spread > 0.5)    scores.expansion  += 1;
+        else if (spread > 0) scores.lateCycle  += 1;
+        else                 { scores.lateCycle += 1; scores.contraction += 1; }
+      }
+      // DXY (strong dollar = late cycle / contraction)
+      if (!isNaN(dxyChg)) {
+        if (dxyChg < -0.3)   { scores.expansion += 0.5; scores.recovery += 1; }
+        else if (dxyChg > 0.3) { scores.lateCycle += 0.5; scores.contraction += 0.5; }
+      }
+      // Fear & Greed (extreme fear → recovery signal)
+      if (!isNaN(fgVal)) {
+        if (fgVal < 20)      scores.recovery   += 1.5;
+        else if (fgVal > 75) scores.lateCycle  += 1;
+      }
+
+      // Pick highest scoring phase
+      const phase = Object.entries(scores).sort((a,b) => b[1]-a[1])[0][0];
+      return phase;
+    }
+
+    // ── Cycle-adjusted sector bias ──────────────────────────────────────────
+    // Returns adjustment pts for a given ticker + direction in current cycle phase.
+    // Positive = cycle tailwind, Negative = cycle headwind.
+    function cycleAdjustment(ticker, direction, phase) {
+      const isBull = direction === "bull";
+      const CYCLE_BIAS = {
+        expansion: {
+          bull: ["BTC","ETH","SUI","QQQ","SMH","mkt_SMH","mkt_QQQ","PLTR","SMCI","IWM","mkt_IWM","ARKX","mkt_ARKX","RKLB","JOBY"],
+          bear: ["GLD","mkt_XLE","USO","UNG"],
+        },
+        lateCycle: {
+          bull: ["GLD","mkt_GLD","XLE","mkt_XLE","USO","UNG"],
+          bear: ["BTC","ETH","SUI","QQQ","mkt_QQQ","PLTR","SMCI"],
+        },
+        contraction: {
+          bull: ["GLD","USO"],
+          bear: ["BTC","ETH","SUI","RKLB","JOBY","PLTR","SMCI","SMH","mkt_SMH","mkt_QQQ","IWM","mkt_IWM","ARKX","mkt_ARKX"],
+        },
+        recovery: {
+          bull: ["BTC","ETH","SUI","ARKX","mkt_ARKX","RKLB","JOBY","IWM","mkt_IWM","GLD"],
+          bear: ["USO","UNG","XLE","mkt_XLE"],
+        },
+      };
+      const bias = CYCLE_BIAS[phase] || CYCLE_BIAS.expansion;
+      const t    = (ticker || "").toUpperCase();
+      if (isBull  && bias.bull.includes(t)) return  8;   // strong tailwind
+      if (!isBull && bias.bear.includes(t)) return  8;   // shorting a headwind asset
+      if (isBull  && bias.bear.includes(t)) return -8;   // fighting the cycle
+      if (!isBull && bias.bull.includes(t)) return -8;   // shorting a tailwind asset
+      return 0; // neutral
+    }
+
+    // ── Tier labels — recalibrated for new scale ────────────────────────────
+    // Old: 85+ = HIGH, 70+ = ELEVATED, 55+ = MODERATE
+    // New: tighter — genuine differentiation across 45-90 range
     function convTier(score) {
-      if (score >= 85) return { label:"HIGH CONVICTION", color:"#3fb950" };
-      if (score >= 70) return { label:"ELEVATED",        color:"#58a6ff" };
+      if (score >= 80) return { label:"HIGH CONVICTION", color:"#3fb950" };
+      if (score >= 68) return { label:"ELEVATED",        color:"#58a6ff" };
       if (score >= 55) return { label:"MODERATE",        color:"#f0b453" };
       return                  { label:"LOW — SKIP",      color:"#f85149" };
     }
+
     function getLiquidityRegime(sd) {
       const walclChg = sd.walcl?.change, tgaChg = sd.tga?.change;
       if (walclChg == null) return { regime:"unknown", bullish:null, label:"Liquidity unknown" };
@@ -666,47 +788,79 @@
       if (!expanding && tgaShrink) return { regime:"mixed",    bullish:null,  label:"Mixed signals →" };
       return                             { regime:"tightening", bullish:false, label:"Net liq tightening ↓" };
     }
-    function scoreSignal(raw, liq) {
-      const base  = BASE_CONVICTION_MAP[raw.pattern] || 68;
-      let   score = base;
+
+    // ── Master scoring function ─────────────────────────────────────────────
+    function scoreSignal(raw, liq, sd) {
+      const base   = BASE_CONVICTION_MAP[raw.pattern] || 40;
+      let   score  = base;
       const checks = {};
       const isBull = raw.direction === "bull";
-      // F1 Volume
+
+      // F1 Volume Conviction
       const vr = parseFloat(raw.volumeRatio || 0);
       checks.volume = vr >= 1.20 ? "pass" : vr >= 1.0 ? "warn" : "fail";
-      if (checks.volume === "pass") score += FILTER_WEIGHTS.volume.pass;
+      if (checks.volume === "pass")      score += FILTER_WEIGHTS.volume.pass;
       else if (checks.volume === "fail") score += FILTER_WEIGHTS.volume.fail;
-      // F2 Trend
-      const a20d = raw.confluence?.above20dMA === true, a20m = raw.confluence?.above20mMA === true;
-      if (isBull)  checks.trend = (a20d && a20m) ? "pass" : a20d ? "warn" : "fail";
+
+      // F2 Trend Alignment
+      const a20d = raw.confluence?.above20dMA === true;
+      const a20m = raw.confluence?.above20mMA === true;
+      if (isBull) checks.trend = (a20d && a20m) ? "pass" : a20d ? "warn" : "fail";
       else {
-        const b20d = raw.confluence?.above20dMA === false, b20m = raw.confluence?.above20mMA === false;
+        const b20d = raw.confluence?.above20dMA === false;
+        const b20m = raw.confluence?.above20mMA === false;
         checks.trend = (b20d && b20m) ? "pass" : b20d ? "warn" : "fail";
       }
-      if (checks.trend === "pass") score += FILTER_WEIGHTS.trend.pass;
+      if (checks.trend === "pass")      score += FILTER_WEIGHTS.trend.pass;
       else if (checks.trend === "fail") score += FILTER_WEIGHTS.trend.fail;
-      // F3 ATR
+
+      // F3 ATR Body Filter
       const ar = parseFloat(raw.atrBodyRatio || 0);
       checks.atr = ar >= 1.5 ? "pass" : ar >= 0.5 ? "warn" : "fail";
-      if (checks.atr === "pass") score += FILTER_WEIGHTS.atr.pass;
+      if (checks.atr === "pass")      score += FILTER_WEIGHTS.atr.pass;
       else if (checks.atr === "fail") score += FILTER_WEIGHTS.atr.fail;
-      // F4 RSI Divergence (bonus only)
+
+      // F4 RSI Divergence (bonus only — rarest signal, highest value)
       checks.divergence = raw.rsiDivergence === true ? "pass" : "na";
       if (checks.divergence === "pass") score += FILTER_WEIGHTS.divergence.pass;
-      // F5 Liquidity
+
+      // F5 Liquidity Regime
       if (liq.bullish === null) checks.liquidity = "warn";
-      else if ((isBull && liq.bullish) || (!isBull && !liq.bullish)) { checks.liquidity = "pass"; score += FILTER_WEIGHTS.liquidity.pass; }
-      else { checks.liquidity = "fail"; score += FILTER_WEIGHTS.liquidity.fail; }
-      // F6 Weekly Close
-      checks.weekClose = raw.patternAge === "confirmed" ? "pass" : raw.patternAge === "forming" ? "fail" : "warn";
-      if (checks.weekClose === "pass") score += FILTER_WEIGHTS.weekClose.pass;
+      else if ((isBull && liq.bullish) || (!isBull && !liq.bullish)) {
+        checks.liquidity = "pass"; score += FILTER_WEIGHTS.liquidity.pass;
+      } else { checks.liquidity = "fail"; score += FILTER_WEIGHTS.liquidity.fail; }
+
+      // F6 Weekly Close Rule
+      checks.weekClose = raw.patternAge === "confirmed" ? "pass"
+                       : raw.patternAge === "forming"   ? "fail" : "warn";
+      if (checks.weekClose === "pass")      score += FILTER_WEIGHTS.weekClose.pass;
       else if (checks.weekClose === "fail") score += FILTER_WEIGHTS.weekClose.fail;
-      // F7 Extension
+
+      // F7 Extension Score
       const ext = Math.abs(parseFloat(raw.extensionPct || 0));
       checks.extension = ext <= 15 ? "pass" : ext <= 25 ? "warn" : "fail";
-      if (checks.extension === "pass") score += FILTER_WEIGHTS.extension.pass;
+      if (checks.extension === "pass")      score += FILTER_WEIGHTS.extension.pass;
       else if (checks.extension === "fail") score += FILTER_WEIGHTS.extension.fail;
-      return { score: Math.min(100, Math.max(0, Math.round(score))), checks, base, liquidityLabel: liq.label };
+
+      // F8 Business Cycle Alignment (silent — no badge shown)
+      // Detect phase from live sheet data, apply sector bias silently
+      const phase       = detectCyclePhase(sd || {});
+      const cycleAdj    = cycleAdjustment(raw.ticker, raw.direction, phase);
+      score            += cycleAdj;
+
+      // Hard ceiling at 91 — 100 is not achievable in real markets
+      // This ensures a score of 83 genuinely means "strong" not "tied for best"
+      score = Math.min(91, Math.max(0, Math.round(score)));
+
+      return {
+        score,
+        checks,
+        base,
+        winRate: HISTORICAL_WR[raw.pattern] || 65,
+        liquidityLabel: liq.label,
+        cyclePhase: phase,
+        cycleAdj,
+      };
     }
 
     function FilterBadge({ status, label, tip, pts }) {
@@ -769,7 +923,7 @@
       const [coachText, setCoachText]         = useState({});
       const [coachLoading, setCoachLoading]   = useState(null);
       const [expandedIdx, setExpandedIdx]     = useState(null);
-      const ASSETS = ["BTC","ETH","SUI","RKLB","JOBY","PLTR","GLD","USO"];
+      const ASSETS = ["BTC","ETH","SUI","RKLB","JOBY","PLTR","GLD","USO","ARKX","SMH","XLE","SPY","QQQ","IWM"];
       const toggleAsset = (a) => setActiveAssets(prev => { const n=new Set(prev); if(n.has(a)){if(n.size>1)n.delete(a);}else n.add(a); return n; });
 
       const runScan = async () => {
@@ -790,9 +944,18 @@
           sd.stock_USO ?`USO:${sd.stock_USO.value}(${sd.stock_USO.change}%)`:null,
         ].filter(Boolean).join(" | ");
         const liqStatus = liq.regime==="expanding"?"EXPANDING (bullish backdrop)":liq.regime==="tightening"?"TIGHTENING (bearish backdrop)":"MIXED";
-        const prompt = `You are an expert technical analyst specialising in HIGH WIN-RATE weekly and monthly candlestick patterns. Today: ${today}. Liquidity regime: ${liqStatus}.${liveCtx?` Live data: ${liveCtx}`:""}
+        const phase = detectCyclePhase(sd||{});
+        const prompt = `You are an expert technical analyst specialising in HIGH WIN-RATE weekly and monthly candlestick patterns on trending industry leaders. Today: ${today}. Business cycle: ${phase.toUpperCase()} phase. Liquidity regime: ${liqStatus}.${liveCtx?` Live data: ${liveCtx}`:""}
 
 Scan these assets on ${tfLabel} candles: ${assets}
+
+IMPORTANT CONTEXT: We are in the ${phase.toUpperCase()} phase of the business cycle. Focus on assets that are trending leaders in this environment:
+- EXPANSION: favour crypto (BTC/ETH/SUI), semis (SMH), tech (PLTR/QQQ), growth/small-caps (IWM), space/drones (ARKX/RKLB)
+- LATE-CYCLE: favour energy (XLE/USO), gold (GLD), flag bearish patterns on overbought growth
+- CONTRACTION: favour gold (GLD), flag bearish patterns broadly, be very selective on bulls
+- RECOVERY: favour crypto, ARKX, IWM — these lead out of bottoms before the crowd notices
+
+Only flag patterns that fit the current cycle phase. A hammer on GLD in contraction = strong. A hammer on BTC in late-cycle = needs extra scrutiny.
 
 Apply ALL SEVEN accuracy filters. For each genuine signal return these fields:
 1. volumeRatio: weekly volume / 10-week avg volume (e.g. 1.35 means 35% above avg)
@@ -813,8 +976,11 @@ Respond ONLY in valid JSON (no markdown):
           const data = await res.json();
           if(data.error) throw new Error(data.error.message||JSON.stringify(data.error)); if(!data.choices||!data.choices[0]) throw new Error("No response from Groq — check your API key");
           const raw = (data.choices&&data.choices[0]&&data.choices[0].message.content||"").replace(/```json|```/g,"").trim();
-          const parsed = JSON.parse(raw);
-          const scored = (parsed.signals||[]).map(s=>({...s,...scoreSignal(s,liq)})).sort((a,b)=>b.score-a.score);
+          // Robustly extract JSON — Llama sometimes adds prose before/after the object
+          const jsonMatch = raw.match(/\{[\s\S]*\}/);
+          if (!jsonMatch) throw new Error("No JSON object found in response — model returned: " + raw.slice(0,120));
+          const parsed = JSON.parse(jsonMatch[0]);
+          const scored = (parsed.signals||[]).map(s=>({...s,...scoreSignal(s,liq,sd)})).sort((a,b)=>b.score-a.score);
           setScoredSignals(scored); setScanMeta({...parsed,count:scored.length});
         } catch(e) { setScanMeta({error:e.message}); }
         setScanning(false);
@@ -890,7 +1056,7 @@ BEFORE YOU TOUCH THE BUY BUTTON
               </button>
             </div>
             <div style={{borderTop:`1px solid ${C.border}`,paddingTop:8,display:"flex",gap:5,flexWrap:"wrap",alignItems:"center"}}>
-              <span style={{fontFamily:mono,fontSize:9,color:C.muted,marginRight:4}}>7 FILTERS ACTIVE:</span>
+              <span style={{fontFamily:mono,fontSize:9,color:C.muted,marginRight:4}}>8 FACTORS (7 filters + cycle):</span>
               {Object.entries(FILTER_WEIGHTS).map(([key,fw])=>(
                 <span key={key} title={fw.tip} style={{fontFamily:mono,fontSize:9,padding:"1px 6px",borderRadius:3,border:`0.5px solid ${C.border}`,color:C.muted,cursor:"help"}}>{fw.label}</span>
               ))}
@@ -913,7 +1079,7 @@ BEFORE YOU TOUCH THE BUY BUTTON
           {/* Stats bar */}
           {scoredSignals.length>0&&(
             <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-              {[{t:"HIGH CONVICTION",min:85,max:101,col:C.green},{t:"ELEVATED",min:70,max:85,col:C.blue},{t:"MODERATE",min:55,max:70,col:C.amber},{t:"LOW",min:0,max:55,col:C.red}].map(b=>{
+              {[{t:"HIGH CONVICTION",min:80,max:92,col:C.green},{t:"ELEVATED",min:68,max:80,col:C.blue},{t:"MODERATE",min:55,max:68,col:C.amber},{t:"LOW",min:0,max:55,col:C.red}].map(b=>{
                 const n=scoredSignals.filter(s=>s.score>=b.min&&s.score<b.max).length;
                 return n>0?<div key={b.t} style={{fontFamily:mono,fontSize:10,color:b.col,background:b.col+"14",border:`0.5px solid ${b.col}44`,borderRadius:4,padding:"3px 10px"}}>{n} {b.t}</div>:null;
               })}
@@ -925,19 +1091,23 @@ BEFORE YOU TOUCH THE BUY BUTTON
             const isBull=s.direction==="bull", tier=convTier(s.score), checks=s.checks||{};
             const isExp=expandedIdx===i, extPct=parseFloat(s.extensionPct||0);
             return (
-              <div key={i} style={{background:C.surface,border:`1px solid ${s.score>=85?tier.color+"66":C.border}`,borderRadius:10,overflow:"hidden"}}>
+              <div key={i} style={{background:C.surface,border:`1px solid ${s.score>=80?tier.color+"66":C.border}`,borderRadius:10,overflow:"hidden"}}>
                 {/* Tier banner */}
                 <div style={{background:tier.color+"14",borderBottom:`1px solid ${tier.color}33`,padding:"5px 16px",display:"flex",alignItems:"center",gap:8}}>
-                  <div style={{width:6,height:6,borderRadius:"50%",background:tier.color,boxShadow:s.score>=85?`0 0 6px ${tier.color}`:"none"}}/>
+                  <div style={{width:6,height:6,borderRadius:"50%",background:tier.color,boxShadow:s.score>=80?`0 0 6px ${tier.color}`:"none"}}/>
                   <span style={{fontFamily:mono,fontSize:10,fontWeight:700,color:tier.color,letterSpacing:"0.08em"}}>{tier.label}</span>
                   {s.patternAge==="forming"&&(<span style={{fontFamily:mono,fontSize:9,color:C.amber,background:C.amber+"18",border:`0.5px solid ${C.amber}44`,borderRadius:3,padding:"1px 6px",marginLeft:4}}>⚠ FORMING — await weekly close</span>)}
-                  <span style={{fontFamily:mono,fontSize:10,color:C.muted,marginLeft:"auto"}}>{s.liquidityLabel}</span>
+                  <span style={{fontFamily:mono,fontSize:10,color:C.muted,marginLeft:"auto",display:"flex",gap:8,alignItems:"center"}}>
+                    {s.cycleAdj!==0&&<span style={{fontSize:9,color:s.cycleAdj>0?C.green:C.red}}>{s.cycleAdj>0?"▲ cycle tailwind":"▼ cycle headwind"}</span>}
+                    <span>{s.liquidityLabel}</span>
+                  </span>
                 </div>
                 {/* Body */}
                 <div style={{padding:"14px 16px",display:"flex",gap:14,alignItems:"flex-start"}}>
                   <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:6,flexShrink:0}}>
                     <ScoreRing score={s.score} tier={tier}/>
                     {candleSVG(s.pattern,48,56)}
+                    <div style={{fontFamily:mono,fontSize:9,color:C.muted,textAlign:"center",marginTop:-2}}>hist.~{s.winRate||HISTORICAL_WR[s.pattern]||65}%</div>
                   </div>
                   <div style={{flex:1,minWidth:0}}>
                     <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:6}}>
@@ -978,7 +1148,7 @@ BEFORE YOU TOUCH THE BUY BUTTON
             );
           })}
           <div style={{fontFamily:mono,fontSize:10,color:C.muted,lineHeight:1.7,paddingTop:4}}>
-            Score = base win rate ± 7 filter adjustments · Weekly close rule enforced · Liquidity regime applied · Educational only — not financial advice
+            Score 38–91 · base win rate + 7 filters + business cycle alignment · 80+ = high conviction · 91 = theoretical max · 100 does not exist · Educational only
           </div>
         </div>
       );
@@ -1016,7 +1186,10 @@ Respond ONLY valid JSON no markdown:
           const data = await res.json();
           if(data.error) throw new Error(data.error.message||JSON.stringify(data.error)); if(!data.choices||!data.choices[0]) throw new Error("No response from Groq — check your API key");
           const raw = (data.choices&&data.choices[0]&&data.choices[0].message.content||"").replace(/```json|```/g,"").trim();
-          const parsed = JSON.parse(raw);
+          // Robustly extract JSON — Llama sometimes adds prose before/after the object
+          const jsonMatch = raw.match(/\{[\s\S]*\}/);
+          if (!jsonMatch) throw new Error("No JSON object found in response — model returned: " + raw.slice(0,120));
+          const parsed = JSON.parse(jsonMatch[0]);
           setTrades(parsed.trades || []);
           setTradesMeta(parsed);
         } catch(e) { setTradesMeta({ error: e.message }); }
