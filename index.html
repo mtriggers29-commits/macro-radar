@@ -568,7 +568,190 @@
       );
     }
 
-    // ── PATTERNS TAB — v2: real OHLCV detection + backtest + merged trades ──────
+    // ── Scoring engine v2 — recalibrated scale ───────────────────────────────
+    // Base score 38–52 + 7 filters max +35 + cycle ±8 → ceiling 91
+    // 100 does not exist. Best real signals land 75–87.
+
+    const FILTER_WEIGHTS = {
+      volume:     { pass: 7,  fail: -5,  label: "Volume Conviction",  tip: "Weekly vol > 120% of 10-week avg" },
+      trend:      { pass: 7,  fail: -6,  label: "Trend Alignment",    tip: "Price above 20d + 20-month MA" },
+      atr:        { pass: 5,  fail: -5,  label: "ATR Body Filter",    tip: "Candle body > 1.5× weekly ATR" },
+      divergence: { pass: 9,  fail: 0,   label: "RSI Divergence",     tip: "Price/RSI divergence confirmed — rarest, highest value" },
+      liquidity:  { pass: 6,  fail: -7,  label: "Liquidity Regime",   tip: "Net liquidity trending with signal direction" },
+      weekClose:  { pass: 3,  fail: -10, label: "Weekly Close Rule",  tip: "Pattern confirmed after weekly candle close" },
+      extension:  { pass: 4,  fail: -5,  label: "Extension Score",    tip: "Price within 25% of 20-week SMA — not overextended" },
+    };
+
+    const BASE_CONVICTION_MAP = {
+      "Morning Star":52,        "Evening Star":51,
+      "Three White Soldiers":50,"Three Black Crows":49,
+      "Bullish Engulfing":48,   "Bearish Engulfing":47,
+      "Hammer":46,              "Shooting Star":45,
+      "Pin Bar":44,             "Inside Bar":42,
+      "Bullish Harami":41,      "Doji":38,
+    };
+
+    const HISTORICAL_WR = {
+      "Morning Star":78,"Evening Star":77,"Three White Soldiers":76,"Three Black Crows":75,
+      "Bullish Engulfing":74,"Bearish Engulfing":73,"Hammer":72,"Shooting Star":71,
+      "Pin Bar":70,"Inside Bar":68,"Bullish Harami":65,"Doji":62,
+    };
+
+    function detectCyclePhase(sd) {
+      const ism      = parseFloat(sd.ism?.value);
+      const vix      = parseFloat(sd.vix?.value);
+      const walclChg = parseFloat(sd.walcl?.change);
+      const spread   = parseFloat(sd.spread?.value);
+      const dxyChg   = parseFloat(sd.dxy?.change);
+      const fgVal    = parseFloat(sd.fg?.value);
+      let scores = { expansion:0, lateCycle:0, contraction:0, recovery:0 };
+      if (!isNaN(ism)) {
+        if (ism >= 53) scores.expansion += 2;
+        else if (ism >= 50) scores.expansion += 1;
+        else if (ism >= 47) scores.lateCycle += 1;
+        else scores.contraction += 2;
+      }
+      if (!isNaN(vix)) {
+        if (vix < 15) scores.expansion += 1;
+        else if (vix < 20) scores.expansion += 0.5;
+        else if (vix < 30) scores.lateCycle += 1;
+        else scores.contraction += 2;
+      }
+      if (!isNaN(walclChg)) {
+        if (walclChg > 0.5)  { scores.expansion += 1; scores.recovery += 1; }
+        else if (walclChg < -0.5) scores.contraction += 1;
+      }
+      if (!isNaN(spread)) {
+        if (spread > 0.5) scores.expansion += 1;
+        else if (spread > 0) scores.lateCycle += 1;
+        else { scores.lateCycle += 1; scores.contraction += 1; }
+      }
+      if (!isNaN(dxyChg)) {
+        if (dxyChg < -0.3)   { scores.expansion += 0.5; scores.recovery += 1; }
+        else if (dxyChg > 0.3) { scores.lateCycle += 0.5; scores.contraction += 0.5; }
+      }
+      if (!isNaN(fgVal)) {
+        if (fgVal < 20) scores.recovery += 1.5;
+        else if (fgVal > 75) scores.lateCycle += 1;
+      }
+      return Object.entries(scores).sort((a,b) => b[1]-a[1])[0][0];
+    }
+
+    function cycleAdjustment(ticker, direction, phase) {
+      const isBull = direction === "bull";
+      const CYCLE_BIAS = {
+        expansion: {
+          bull: ["BTC","ETH","SUI","QQQ","SMH","mkt_SMH","mkt_QQQ","PLTR","SMCI","IWM","mkt_IWM","ARKX","mkt_ARKX","RKLB","JOBY","XLI","mkt_XLI","XLB","mkt_XLB"],
+          bear: ["GLD","mkt_GLD","TLT","mkt_TLT","XLP","mkt_XLP","XLU"],
+        },
+        lateCycle: {
+          bull: ["GLD","mkt_GLD","XLE","mkt_XLE","USO","UNG","XLV","mkt_XLV","XLP","mkt_XLP","XLB","mkt_XLB"],
+          bear: ["BTC","ETH","SUI","QQQ","mkt_QQQ","PLTR","SMCI","XLY"],
+        },
+        contraction: {
+          bull: ["GLD","mkt_GLD","TLT","mkt_TLT","XLV","mkt_XLV","XLP","mkt_XLP"],
+          bear: ["BTC","ETH","SUI","RKLB","JOBY","PLTR","SMCI","SMH","mkt_SMH","mkt_QQQ","IWM","mkt_IWM","ARKX","mkt_ARKX","XLI","mkt_XLI","XLB","mkt_XLB"],
+        },
+        recovery: {
+          bull: ["BTC","ETH","SUI","ARKX","mkt_ARKX","RKLB","JOBY","IWM","mkt_IWM","GLD","mkt_GLD","XLI","mkt_XLI"],
+          bear: ["USO","UNG","XLE","mkt_XLE","XLP","mkt_XLP","TLT","mkt_TLT"],
+        },
+      };
+      const bias = CYCLE_BIAS[phase] || CYCLE_BIAS.expansion;
+      const t    = (ticker || "").toUpperCase();
+      if (isBull  && bias.bull.includes(t)) return  8;
+      if (!isBull && bias.bear.includes(t)) return  8;
+      if (isBull  && bias.bear.includes(t)) return -8;
+      if (!isBull && bias.bull.includes(t)) return -8;
+      return 0;
+    }
+
+    function convTier(score) {
+      if (score >= 80) return { label:"HIGH CONVICTION", color:"#3fb950" };
+      if (score >= 68) return { label:"ELEVATED",        color:"#58a6ff" };
+      if (score >= 55) return { label:"MODERATE",        color:"#f0b453" };
+      return                  { label:"LOW — SKIP",      color:"#f85149" };
+    }
+
+    function getLiquidityRegime(sd) {
+      const walclChg = sd.walcl?.change, tgaChg = sd.tga?.change;
+      if (walclChg == null) return { regime:"unknown", bullish:null, label:"Liquidity unknown" };
+      const expanding  = parseFloat(walclChg) > 0;
+      const tgaShrink  = tgaChg != null && parseFloat(tgaChg) < 0;
+      if (expanding && tgaShrink) return { regime:"expanding",  bullish:true,  label:"Net liq expanding ↑" };
+      if (expanding)              return { regime:"mild-exp",   bullish:true,  label:"WALCL expanding ↑"  };
+      if (!expanding && tgaShrink) return { regime:"mixed",    bullish:null,  label:"Mixed signals →"    };
+      return                             { regime:"tightening", bullish:false, label:"Net liq tightening ↓" };
+    }
+
+    function scoreSignal(raw, liq, sd) {
+      const base   = BASE_CONVICTION_MAP[raw.pattern] || 40;
+      let   score  = base;
+      const checks = {};
+      const isBull = raw.direction === "bull";
+
+      // F1 Volume
+      const vr = parseFloat(raw.volumeRatio || 0);
+      checks.volume = vr >= 1.20 ? "pass" : vr >= 1.0 ? "warn" : "fail";
+      if (checks.volume === "pass")      score += FILTER_WEIGHTS.volume.pass;
+      else if (checks.volume === "fail") score += FILTER_WEIGHTS.volume.fail;
+
+      // F2 Trend — uses above20wSMA (from real data) mapped to above20dMA field
+      const a20d = raw.confluence?.above20dMA === true || raw.above20wSMA === true;
+      const a20m = raw.confluence?.above20mMA === true || raw.above200dMA === true;
+      if (isBull) checks.trend = (a20d && a20m) ? "pass" : a20d ? "warn" : "fail";
+      else {
+        const b20d = raw.confluence?.above20dMA === false || raw.above20wSMA === false;
+        const b20m = raw.confluence?.above20mMA === false || raw.above200dMA === false;
+        checks.trend = (b20d && b20m) ? "pass" : b20d ? "warn" : "fail";
+      }
+      if (checks.trend === "pass")      score += FILTER_WEIGHTS.trend.pass;
+      else if (checks.trend === "fail") score += FILTER_WEIGHTS.trend.fail;
+
+      // F3 ATR
+      const ar = parseFloat(raw.atrBodyRatio || 0);
+      checks.atr = ar >= 1.5 ? "pass" : ar >= 0.5 ? "warn" : "fail";
+      if (checks.atr === "pass")      score += FILTER_WEIGHTS.atr.pass;
+      else if (checks.atr === "fail") score += FILTER_WEIGHTS.atr.fail;
+
+      // F4 RSI Divergence (bonus only)
+      checks.divergence = raw.rsiDivergence === true ? "pass" : "na";
+      if (checks.divergence === "pass") score += FILTER_WEIGHTS.divergence.pass;
+
+      // F5 Liquidity
+      if (liq.bullish === null) checks.liquidity = "warn";
+      else if ((isBull && liq.bullish) || (!isBull && !liq.bullish)) {
+        checks.liquidity = "pass"; score += FILTER_WEIGHTS.liquidity.pass;
+      } else { checks.liquidity = "fail"; score += FILTER_WEIGHTS.liquidity.fail; }
+
+      // F6 Weekly Close — always "confirmed" for data-detected patterns
+      checks.weekClose = raw.patternAge === "confirmed" ? "pass"
+                       : raw.patternAge === "forming"   ? "fail" : "warn";
+      if (checks.weekClose === "pass")      score += FILTER_WEIGHTS.weekClose.pass;
+      else if (checks.weekClose === "fail") score += FILTER_WEIGHTS.weekClose.fail;
+
+      // F7 Extension
+      const ext = Math.abs(parseFloat(raw.extensionPct || 0));
+      checks.extension = ext <= 15 ? "pass" : ext <= 25 ? "warn" : "fail";
+      if (checks.extension === "pass")      score += FILTER_WEIGHTS.extension.pass;
+      else if (checks.extension === "fail") score += FILTER_WEIGHTS.extension.fail;
+
+      // F8 Cycle alignment (silent)
+      const phase    = detectCyclePhase(sd || {});
+      const cycleAdj = cycleAdjustment(raw.ticker, raw.direction, phase);
+      score         += cycleAdj;
+
+      score = Math.min(91, Math.max(0, Math.round(score)));
+      return {
+        score, checks, base,
+        winRate:      HISTORICAL_WR[raw.pattern] || 65,
+        liquidityLabel: liq.label,
+        cyclePhase:   phase,
+        cycleAdj,
+      };
+    }
+
+        // ── PATTERNS TAB — v2: real OHLCV detection + backtest + merged trades ──────
 
     function PatternsTab({ sheetData: sd }) {
       const [signals,    setSignals]    = useState([]);
